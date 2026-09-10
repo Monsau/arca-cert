@@ -1,0 +1,71 @@
+openapi: 3.1.0
+info:
+  title: Arca Cert - Certification Dossier Builder REST API
+  version: 0.1.0
+  description: Synchronous contract of arca-cert (see ADR-002).
+servers:
+  - url: /api/v1
+paths:
+  /dossiers:
+    post:
+      summary: Build a certification dossier
+      operationId: cert_post_773445
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {'$ref': '#/components/schemas/CertificationDossier'}
+  /dossiers:
+    get:
+      summary: List dossiers
+      operationId: cert_get_773445
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {'$ref': '#/components/schemas/CertificationDossier'}
+  /dossiers/{id}:
+    get:
+      summary: Read a dossier
+      operationId: cert_get_967057
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {'$ref': '#/components/schemas/CertificationDossier'}
+  /dossiers/{id}/remediation:
+    get:
+      summary: Get remediation plan
+      operationId: cert_get_805017
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {'$ref': '#/components/schemas/CertificationDossier'}
+  /dossiers/{id}/publish:
+    post:
+      summary: Publish the dossier
+      operationId: cert_post_216949
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {'$ref': '#/components/schemas/CertificationDossier'}
+components:
+  schemas:
+    CertificationDossier:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+        created_at:
+          type: string
+          format: date-time

@@ -1,0 +1,62 @@
+[
+  {
+    "type": "record",
+    "name": "DossierBuilt",
+    "namespace": "arca.cert",
+    "doc": "Emitted when a dossier is built.",
+    "fields": [
+      {
+        "name": "dossier_id",
+        "type": "str"
+      },
+      {
+        "name": "target",
+        "type": "str"
+      },
+      {
+        "name": "built_at",
+        "type": "str"
+      }
+    ]
+  },
+  {
+    "type": "record",
+    "name": "DossierPublished",
+    "namespace": "arca.cert",
+    "doc": "Emitted when a dossier is published.",
+    "fields": [
+      {
+        "name": "dossier_id",
+        "type": "str"
+      },
+      {
+        "name": "reviewer",
+        "type": "str"
+      },
+      {
+        "name": "valid_until",
+        "type": "str"
+      }
+    ]
+  },
+  {
+    "type": "record",
+    "name": "RemediationIssued",
+    "namespace": "arca.cert",
+    "doc": "Emitted when a remediation plan is issued.",
+    "fields": [
+      {
+        "name": "dossier_id",
+        "type": "str"
+      },
+      {
+        "name": "item_count",
+        "type": "int"
+      },
+      {
+        "name": "issued_at",
+        "type": "str"
+      }
+    ]
+  }
+]

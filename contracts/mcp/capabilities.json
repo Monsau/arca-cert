@@ -1,0 +1,61 @@
+{
+  "module": "arca-cert",
+  "version": "0.1.0",
+  "governance": "Capabilities are versioned and published through OOC gates (ADR-004).",
+  "capabilities": [
+    {
+      "name": "dossier-generate",
+      "description": "Build a certification dossier for a target.",
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "remediation-plan",
+      "description": "Generate a remediation plan from a dossier.",
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "evidence-collect",
+      "description": "Collect evidence references for a dossier.",
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  ]
+}
