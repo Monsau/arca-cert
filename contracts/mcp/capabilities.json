@@ -4,55 +4,111 @@
   "governance": "Capabilities are versioned and published through OOC gates (ADR-004).",
   "capabilities": [
     {
-      "name": "dossier-generate",
-      "description": "Build a certification dossier for a target.",
+      "name": "create_cert_package",
+      "description": "Build a complete certification package for a target.",
       "input_schema": {
         "type": "object",
-        "properties": {},
+        "properties": {
+          "target": {"type": "string"},
+          "scores": {"type": "array"},
+          "evidence": {"type": "array"},
+          "threshold": {"type": "number"},
+          "valid_days": {"type": "integer"}
+        },
+        "required": ["target", "scores"],
         "additionalProperties": true
       },
       "output_schema": {
         "type": "object",
         "properties": {
-          "status": {
-            "type": "string"
-          }
+          "package_id": {"type": "string"},
+          "dossier_id": {"type": "string"},
+          "status": {"type": "string"}
         },
         "additionalProperties": true
       }
     },
     {
-      "name": "remediation-plan",
-      "description": "Generate a remediation plan from a dossier.",
+      "name": "assemble_evidence",
+      "description": "Assemble or extend an evidence binder for a dossier.",
       "input_schema": {
         "type": "object",
-        "properties": {},
+        "properties": {
+          "dossier_id": {"type": "string"},
+          "additional_refs": {"type": "array"}
+        },
+        "required": ["dossier_id"],
         "additionalProperties": true
       },
       "output_schema": {
         "type": "object",
         "properties": {
-          "status": {
-            "type": "string"
-          }
+          "binder_id": {"type": "string"},
+          "evidence_count": {"type": "integer"}
         },
         "additionalProperties": true
       }
     },
     {
-      "name": "evidence-collect",
-      "description": "Collect evidence references for a dossier.",
+      "name": "get_readiness_status",
+      "description": "Return readiness status for a target or assessment id.",
       "input_schema": {
         "type": "object",
-        "properties": {},
+        "properties": {
+          "target": {"type": "string"},
+          "assessment_id": {"type": "string"},
+          "scores": {"type": "array"},
+          "threshold": {"type": "number"}
+        },
         "additionalProperties": true
       },
       "output_schema": {
         "type": "object",
         "properties": {
-          "status": {
-            "type": "string"
-          }
+          "level": {"type": "string"},
+          "overall_score": {"type": "number"}
+        },
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "get_remediation_plan",
+      "description": "Return the remediation plan for a dossier.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "dossier_id": {"type": "string"}
+        },
+        "required": ["dossier_id"],
+        "additionalProperties": true
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "plan_id": {"type": "string"},
+          "items": {"type": "array"}
+        },
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "publish_cert_package",
+      "description": "Publish a certification dossier, sealing it for auditors.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "dossier_id": {"type": "string"},
+          "reviewer": {"type": "string"}
+        },
+        "required": ["dossier_id"],
+        "additionalProperties": true
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "dossier_id": {"type": "string"},
+          "status": {"type": "string"},
+          "seal": {"type": "string"}
         },
         "additionalProperties": true
       }

@@ -8,13 +8,13 @@ from src.main import app  # noqa: E402
 
 
 def test_healthz():
-    client = TestClient(app)
-    response = client.get("/healthz")
-    assert response.status_code == 200
-    assert response.json()["status"] == "ok"
+    with TestClient(app) as client:
+        response = client.get("/healthz")
+        assert response.status_code == 200
+        assert response.json()["status"] == "ok"
 
 
 def test_api_v1_health():
-    client = TestClient(app)
-    response = client.get("/api/v1/cert/health")
-    assert response.status_code == 200
+    with TestClient(app) as client:
+        response = client.get("/api/v1/cert/health")
+        assert response.status_code == 200

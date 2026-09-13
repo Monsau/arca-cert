@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Arca Cert — Certification Cockpit</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <h1>Arca Cert</h1>
+    <nav>
+      <button data-view="packages">Packages</button>
+      <button data-view="build">Build Package</button>
+      <button data-view="readiness">Readiness</button>
+      <button data-view="soc">SOC</button>
+    </nav>
+  </header>
+  <main id="app">
+    <section id="packages-view" class="view active">
+      <h2>Certification Packages</h2>
+      <div id="package-list" class="card-grid"></div>
+      <div id="package-detail" class="detail hidden"></div>
+    </section>
+    <section id="build-view" class="view">
+      <h2>Build Certification Package</h2>
+      <form id="build-form" class="form-card">
+        <label>Target
+          <input type="text" id="target" placeholder="arca-flow" required>
+        </label>
+        <label>Scores (JSON array)
+          <textarea id="scores" rows="4" required>[{"dimension":"security","value":0.85},{"dimension":"compliance","value":0.6}]</textarea>
+        </label>
+        <label>Evidence (JSON array)
+          <textarea id="evidence" rows="3">[{"source":"trust","refId":"ev-1","description":"trust score evidence"}]</textarea>
+        </label>
+        <label>Threshold
+          <input type="number" id="threshold" step="0.01" value="0.7">
+        </label>
+        <button type="submit">Build Package</button>
+      </form>
+      <pre id="build-result"></pre>
+    </section>
+    <section id="readiness-view" class="view">
+      <h2>Readiness Dashboard</h2>
+      <div id="readiness-list" class="card-grid"></div>
+    </section>
+    <section id="soc-view" class="view">
+      <h2>Embedded SOC</h2>
+      <div class="soc-grid">
+        <div class="card"><h3>Health</h3><pre id="soc-health"></pre></div>
+        <div class="card"><h3>Risk Summary</h3><pre id="soc-risk"></pre></div>
+        <div class="card"><h3>Recent Events</h3><pre id="soc-events"></pre></div>
+      </div>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

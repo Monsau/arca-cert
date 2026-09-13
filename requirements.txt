@@ -1,4 +1,9 @@
 fastapi>=0.110
 uvicorn[standard]>=0.29
 pydantic>=2.6
+pydantic-settings>=2.1
 PyYAML>=6.0
+python-jose[cryptography]>=3.3
+python-multipart>=0.0.9
+ariadne>=0.23
+kafka-python-ng>=2.0

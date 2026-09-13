@@ -1,4 +1,6 @@
 """Integration tests for arca-cert REST and MCP."""
+import os
+
 import pytest
 
 fastapi = pytest.importorskip("fastapi")
@@ -52,17 +54,76 @@ def test_remediation_endpoint(client):
     assert plan["dossier_id"] == rid
 
 
-def test_mcp_dossier_generate(client):
-    response = client.post("/mcp/tools/dossier-generate", json={
+def test_build_package(client):
+    response = client.post("/api/v1/packages", json={
+        "target": "arca-exchange", "scores": SCORES, "evidence": EVIDENCE})
+    assert response.status_code == 201
+    package = response.json()
+    assert package["id"]
+    assert package["assessment"]["level"]
+
+
+def test_readiness_endpoint(client):
+    response = client.post("/api/v1/readiness", json={
+        "target": "arca-readiness", "scores": SCORES})
+    assert response.status_code == 201
+    data = response.json()
+    assert data["level"] == "conditional"
+
+
+def test_evidence_binder_endpoint(client):
+    built = client.post("/api/v1/dossiers", json={
+        "target": "arca-binder", "scores": SCORES, "evidence": EVIDENCE}).json()
+    rid = built["dossier"]["id"]
+    response = client.get(f"/api/v1/evidence-binders/{rid}")
+    assert response.status_code == 200
+    assert response.json()["dossier_id"] == rid
+
+
+def test_mcp_create_cert_package(client):
+    response = client.post("/mcp/tools/create_cert_package", json={
         "target": "arca-exchange", "scores": SCORES, "evidence": EVIDENCE})
     assert response.status_code == 200
-    assert response.json()["dossier_id"]
+    assert response.json()["package_id"]
 
 
-def test_mcp_evidence_collect(client):
+def test_mcp_evidence_assemble(client):
     built = client.post("/api/v1/dossiers", json={
         "target": "arca-studio", "scores": SCORES, "evidence": EVIDENCE}).json()
     rid = built["dossier"]["id"]
-    response = client.post("/mcp/tools/evidence-collect", json={"dossier_id": rid})
+    response = client.post("/mcp/tools/assemble_evidence", json={
+        "dossier_id": rid,
+        "additional_refs": [{"source": "bench", "ref_id": "b1"}]})
     assert response.status_code == 200
-    assert response.json()["evidence"]
+    assert response.json()["evidence_count"] == 2
+
+
+def test_mcp_get_readiness_status(client):
+    response = client.post("/mcp/tools/get_readiness_status", json={
+        "target": "arca-studio", "scores": SCORES})
+    assert response.status_code == 200
+    assert response.json()["level"]
+
+
+def test_mcp_publish_cert_package(client):
+    built = client.post("/api/v1/dossiers", json={
+        "target": "arca-publish", "scores": SCORES, "evidence": EVIDENCE}).json()
+    rid = built["dossier"]["id"]
+    response = client.post("/mcp/tools/publish_cert_package", json={
+        "dossier_id": rid, "reviewer": "auditor-mcp"})
+    assert response.status_code == 200
+    assert response.json()["status"] == "published"
+
+
+def test_auth_required_when_enabled():
+    original = os.environ.get("CERT_AUTH_DISABLED")
+    os.environ["CERT_AUTH_DISABLED"] = "false"
+    try:
+        with TestClient(app) as c:
+            response = c.get("/api/v1/dossiers")
+            assert response.status_code == 401
+    finally:
+        if original is None:
+            os.environ.pop("CERT_AUTH_DISABLED", None)
+        else:
+            os.environ["CERT_AUTH_DISABLED"] = original

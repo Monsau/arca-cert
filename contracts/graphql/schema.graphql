@@ -3,7 +3,11 @@ type CertificationDossier {
   target: String!
   status: String!
   scores: [Score!]!
+  evidence: [EvidenceRef!]!
+  reviewer: String
   validUntil: String!
+  isExpired: Boolean!
+  seal: String
 }
 
 type Score {
@@ -11,18 +15,81 @@ type Score {
   value: Float!
 }
 
+type EvidenceRef {
+  source: String!
+  refId: String!
+  description: String
+  collectedAt: String
+}
+
 type RemediationItem {
   risk: String!
   action: String!
   owner: String!
+  dueDays: Int!
+  dimension: String!
+}
+
+type RemediationPlan {
+  id: ID!
+  dossierId: ID!
+  createdAt: String!
+  items: [RemediationItem!]!
+}
+
+type ReadinessAssessment {
+  id: ID!
+  target: String!
+  overallScore: Float!
+  level: String!
+  threshold: Float!
+  assessedAt: String!
+  dimensions: [Score!]!
+  failingDimensions: [String!]!
+}
+
+type EvidenceBinder {
+  id: ID!
+  dossierId: ID!
+  assembledAt: String!
+  evidence: [EvidenceRef!]!
+  count: Int!
+}
+
+type CertificationPackage {
+  id: ID!
+  dossier: CertificationDossier!
+  assessment: ReadinessAssessment!
+  binder: EvidenceBinder!
+  remediationId: String
+  generatedAt: String!
 }
 
 type Query {
   dossiers: [CertificationDossier!]!
   dossier(id: ID!): CertificationDossier
+  packages: [CertificationPackage!]!
+  package(id: ID!): CertificationPackage
+  readiness(assessmentId: ID!): ReadinessAssessment
+  readinessByTarget(target: String!): [ReadinessAssessment!]!
+  remediation(dossierId: ID!): RemediationPlan
 }
 
 type Mutation {
-  buildDossier(target: String!): CertificationDossier!
-  publishDossier(id: ID!): CertificationDossier!
+  buildDossier(target: String!, scores: [ScoreInput!]!, evidence: [EvidenceInput!], threshold: Float): CertificationDossier!
+  buildPackage(target: String!, scores: [ScoreInput!]!, evidence: [EvidenceInput!], threshold: Float, validDays: Int): CertificationPackage!
+  publishDossier(id: ID!, reviewer: String): CertificationDossier!
+  assembleEvidence(dossierId: ID!, additionalRefs: [EvidenceInput!]): EvidenceBinder!
+  assessReadiness(target: String!, scores: [ScoreInput!]!, threshold: Float): ReadinessAssessment!
+}
+
+input ScoreInput {
+  dimension: String!
+  value: Float!
+}
+
+input EvidenceInput {
+  source: String!
+  refId: String!
+  description: String
 }
