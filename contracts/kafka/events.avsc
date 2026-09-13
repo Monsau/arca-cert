@@ -58,5 +58,57 @@
         "type": "str"
       }
     ]
+  },
+  {
+    "type": "record",
+    "name": "BenchResults",
+    "namespace": "arca.cert",
+    "doc": "Consumed from arca-bench to build a certification package.",
+    "fields": [
+      {
+        "name": "bench_id",
+        "type": "string"
+      },
+      {
+        "name": "target",
+        "type": "string"
+      },
+      {
+        "name": "dimension",
+        "type": "string"
+      },
+      {
+        "name": "passed",
+        "type": "boolean"
+      },
+      {
+        "name": "score",
+        "type": "double"
+      },
+      {
+        "name": "evidence",
+        "type": {
+          "type": "array",
+          "items": {
+            "type": "record",
+            "name": "EvidenceRef",
+            "fields": [
+              {
+                "name": "source",
+                "type": "string"
+              },
+              {
+                "name": "ref_id",
+                "type": "string"
+              },
+              {
+                "name": "description",
+                "type": "string"
+              }
+            ]
+          }
+        }
+      }
+    ]
   }
 ]

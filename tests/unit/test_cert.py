@@ -164,3 +164,22 @@ def test_remediation_planner():
     plan = planner.create_plan(dossier, threshold=0.7)
     assert len(plan.items) == 1
     assert plan.items[0].dimension == "security"
+
+
+def test_bench_result_consumer_inject_builds_package():
+    from src.infra.kafka import BenchResultConsumer
+
+    repo = SqlCertRepository(connect_sqlite())
+    svc = CertService(repo)
+    consumer = BenchResultConsumer(svc, topic="bench.results")
+    consumer.inject({
+        "bench_id": "b1",
+        "target": "supplier-x",
+        "dimension": "supplier-risk",
+        "passed": True,
+        "score": 0.85,
+        "evidence": [],
+    })
+    packages = svc.list_packages()
+    assert len(packages) == 1
+    assert packages[0]["dossier"]["target"] == "supplier-x"
