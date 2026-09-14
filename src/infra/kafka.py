@@ -64,14 +64,21 @@ class KafkaProducer:
 class BenchResultConsumer:
     """Consumes bench.results events and builds certification packages.
 
-    The payload shape expected from arca-bench:
+    The payload shape expected from arca-bench is the standard Kafka envelope
+    with a nested BenchResults payload:
       {
-        "bench_id": "uuid",
-        "target": "arca-flow",
-        "dimension": "security",
-        "passed": true,
-        "score": 0.85,
-        "evidence": [{"source": "bench", "ref_id": "...", "description": "..."}]
+        "event_id": "...",
+        "correlation_id": "...",
+        "occurred_at": "...",
+        "actor": null,
+        "payload": {
+          "bench_id": "uuid",
+          "target": "arca-flow",
+          "dimension": "security",
+          "passed": true,
+          "score": 0.85,
+          "evidence": [{"source": "bench", "ref_id": "...", "description": "..."}]
+        }
       }
     """
 
@@ -86,7 +93,14 @@ class BenchResultConsumer:
         self._stop = threading.Event()
         self._in_memory: list = []
 
-    def _build_package(self, payload: dict) -> None:
+    def _build_package(self, value: dict) -> None:
+        if isinstance(value, dict) and "payload" in value and isinstance(value.get("payload"), dict):
+            payload = value["payload"]
+        elif isinstance(value, dict):
+            payload = value
+        else:
+            logger.warning("Ignoring malformed bench result: %s", value)
+            return
         target = payload.get("target")
         dimension = payload.get("dimension")
         score = payload.get("score")
