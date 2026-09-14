@@ -11,7 +11,7 @@ from src.core.domain.cert_models import (
     RemediationItem,
     ScoreInput,
 )
-from src.core.events.cert_events import OutboxPublisher
+from src.core.events.cert_events import TOPIC_ASSET_PUBLISHED, OutboxPublisher
 from src.core.services.cert_service import CertService
 from src.core.services.certification_package_builder import CertificationPackageBuilder
 from src.core.services.evidence_binder_assembler import EvidenceBinderAssembler
@@ -75,6 +75,25 @@ def test_build_and_publish(service):
     assert "cert.dossier.built" in topics
     assert "cert.remediation.issued" in topics
     assert "cert.dossier.published" in topics
+
+
+def test_publish_dossier_emits_asset_published(service):
+    svc, publisher = service
+    dossier, _ = svc.build_dossier(
+        target="arca-flow",
+        scores=[{"dimension": "confidence", "value": 0.9}],
+        evidence=[{"source": "trust", "ref_id": "r1"}],
+    )
+    svc.publish_dossier(dossier.id, "auditor-2")
+    events = publisher.drain()
+    asset_events = [e for e in events if e.topic == TOPIC_ASSET_PUBLISHED]
+    assert len(asset_events) == 1
+    payload = asset_events[0].payload
+    assert payload["asset_id"] == dossier.id
+    assert payload["name"] == "arca-flow"
+    assert payload["version"] == "1.0.0"
+    assert payload["trust_level"] == "certified"
+    assert payload["source"] == "arca-cert"
 
 
 def test_failing_dimensions():

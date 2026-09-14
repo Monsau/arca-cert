@@ -11,6 +11,7 @@ Backwards-compatible helpers for dossier/remain keep existing tests green.
 from ..domain.cert_models import CertificationDossier, DossierStatus
 from ..events.cert_events import (
     OutboxPublisher,
+    asset_published,
     dossier_built,
     dossier_published,
     dossier_revoked,
@@ -52,6 +53,8 @@ class CertService:
         dossier.publish(reviewer)
         self._repo.save_dossier(dossier)
         self._publisher.publish(dossier_published(dossier))
+        package_id = dossier.id
+        self._publisher.publish(asset_published(dossier, package_id))
         if self._collector:
             self._collector.collect_event(
                 "dossier.published",

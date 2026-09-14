@@ -9,24 +9,43 @@ from .api import graphql, mcp, rest
 from .config import settings
 from .core.services.cert_service import CertService
 from .infra import otel
-from .infra.kafka import BenchResultConsumer
+from .infra.kafka import BenchResultConsumer, KafkaEvent, KafkaProducer
 from .infra.soc import SOCCollector
 from .infra.store import SqlCertRepository, connect_sqlite
 from .policies.oidc import OIDCValidator
+
+
+class KafkaDomainEventPublisher:
+    def __init__(self, producer: KafkaProducer):
+        self._producer = producer
+
+    def publish(self, event) -> None:
+        self._producer.publish(
+            KafkaEvent(
+                topic=event.topic,
+                key=event.key,
+                payload=event.payload,
+            )
+        )
 
 
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
     repository = SqlCertRepository(connect_sqlite())
     collector = SOCCollector()
+    kafka_producer = KafkaProducer()
+    kafka_publisher = KafkaDomainEventPublisher(kafka_producer)
     app.state.cert_repository = repository
     app.state.soc_collector = collector
+    app.state.kafka_publisher = kafka_publisher
     app.state.oidc_validator = OIDCValidator(
         secret=settings.jwt_secret,
         issuer=settings.oidc_issuer,
         audience=settings.oidc_audience,
     )
-    app.state.cert_service = CertService(repository, collector=collector)
+    app.state.cert_service = CertService(
+        repository, publisher=kafka_publisher, collector=collector
+    )
     consumer = BenchResultConsumer(app.state.cert_service)
     app.state.bench_consumer = consumer
     consumer.start()

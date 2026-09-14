@@ -9,6 +9,7 @@ TOPIC_REMEDIATION_ISSUED = "cert.remediation.issued"
 TOPIC_EVIDENCE_BINDER_ASSEMBLED = "cert.evidence_binder.assembled"
 TOPIC_READINESS_ASSESSED = "cert.readiness.assessed"
 TOPIC_PACKAGE_CREATED = "cert.package.created"
+TOPIC_ASSET_PUBLISHED = "asset.published"
 
 
 @dataclass(frozen=True)
@@ -106,6 +107,20 @@ def package_created(package) -> DomainEvent:
             "dossier_id": package.dossier.id,
             "target": package.dossier.target,
             "generated_at": package.generated_at.isoformat(),
+        },
+    )
+
+
+def asset_published(dossier, package_id: str) -> DomainEvent:
+    return DomainEvent(
+        topic=TOPIC_ASSET_PUBLISHED,
+        key=package_id,
+        payload={
+            "asset_id": package_id,
+            "name": dossier.target,
+            "version": "1.0.0",
+            "trust_level": "certified",
+            "source": "arca-cert",
         },
     )
 
