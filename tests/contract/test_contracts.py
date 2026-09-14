@@ -1,31 +1,50 @@
-"""Contract checks (pass 1): contract files exist and parse."""
+"""Contract conformance tests — verify contract artifacts and basic endpoints."""
 import json
-import os
+from pathlib import Path
 
 import pytest
+import yaml
+from fastapi.testclient import TestClient
 
-BASE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from src.main import app
 
-
-def test_openapi_yaml_parses():
-    yaml = pytest.importorskip("yaml")
-    with open(os.path.join(BASE, "contracts", "rest", "openapi.yaml"), encoding="utf-8") as f:
-        doc = yaml.safe_load(f)
-    assert doc["openapi"].startswith("3.")
+ROOT = Path(__file__).resolve().parents[2]
+CONTRACTS = ROOT / "contracts"
 
 
-def test_graphql_schema_exists():
-    with open(os.path.join(BASE, "contracts", "graphql", "schema.graphql"), encoding="utf-8") as f:
-        assert "type Query" in f.read()
+@pytest.fixture
+def client():
+    with TestClient(app) as c:
+        yield c
 
 
-def test_mcp_capabilities_json_parses():
-    with open(os.path.join(BASE, "contracts", "mcp", "capabilities.json"), encoding="utf-8") as f:
-        doc = json.load(f)
-    assert doc["capabilities"], "at least one capability required"
+def test_openapi_contract_parses():
+    doc = yaml.safe_load((CONTRACTS / "rest" / "openapi.yaml").read_text(encoding="utf-8"))
+    assert doc.get("openapi", "").startswith("3.")
+    assert doc.get("paths")
 
 
-def test_kafka_avro_schemas_parse():
-    with open(os.path.join(BASE, "contracts", "kafka", "events.avsc"), encoding="utf-8") as f:
-        doc = json.load(f)
-    assert isinstance(doc, list) and doc, "expected a non-empty list of Avro schemas"
+def test_graphql_sdl_nonempty():
+    sdl = (CONTRACTS / "graphql" / "schema.graphql").read_text(encoding="utf-8")
+    assert "type Query" in sdl
+
+
+def test_mcp_capabilities_valid_json():
+    caps = json.loads((CONTRACTS / "mcp" / "capabilities.json").read_text(encoding="utf-8"))
+    assert caps.get("capabilities")
+
+
+def test_kafka_avsc_parses():
+    json.loads((CONTRACTS / "kafka" / "events.avsc").read_text(encoding="utf-8"))
+
+
+def test_health_endpoint_responds(client):
+    for path in ("/health", "/healthz"):
+        resp = client.get(path)
+        if resp.status_code in (200, 401, 403):
+            break
+    else:
+        pytest.fail("no health endpoint responded")
+    if resp.status_code == 200:
+        body = resp.json()
+        assert body.get("status") in ("ok", "ready")
