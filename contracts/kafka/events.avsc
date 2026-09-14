@@ -172,5 +172,69 @@
         "type": "str"
       }
     ]
+  },
+  {
+    "type": "record",
+    "name": "ProvenanceTrace",
+    "namespace": "arca.cert.consumed",
+    "doc": "Consumed from ArcaQ (topic arcaq.prov-o.traces) to hydrate certification packages with trace refs.",
+    "fields": [
+      {
+        "name": "trace_id",
+        "type": "string",
+        "doc": "PROV-O trace identifier"
+      },
+      {
+        "name": "target",
+        "type": "string",
+        "doc": "Subject/target the trace applies to"
+      },
+      {
+        "name": "activity",
+        "type": "string",
+        "doc": "PROV-O activity type or predicate"
+      },
+      {
+        "name": "entity",
+        "type": [
+          "null",
+          "string"
+        ],
+        "default": null,
+        "doc": "Entity used or generated"
+      },
+      {
+        "name": "agent",
+        "type": [
+          "null",
+          "string"
+        ],
+        "default": null,
+        "doc": "Agent or workload identity"
+      },
+      {
+        "name": "trace_uri",
+        "type": [
+          "null",
+          "string"
+        ],
+        "default": null,
+        "doc": "Resolvable trace URI"
+      },
+      {
+        "name": "occurred_at",
+        "type": "string",
+        "doc": "ISO-8601 UTC timestamp"
+      },
+      {
+        "name": "attributes",
+        "type": {
+          "type": "map",
+          "values": "string"
+        },
+        "default": {},
+        "doc": "Additional PROV-O attributes"
+      }
+    ]
   }
 ]

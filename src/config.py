@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     oidc_issuer: str = os.environ.get("CERT_OIDC_ISSUER", "")
     oidc_audience: str = os.environ.get("CERT_OIDC_AUDIENCE", "arca-cert")
     auth_disabled: bool = os.environ.get("CERT_AUTH_DISABLED", "false").lower() in ("1", "true", "yes")
+    # Optional ArcaQ PROV-O trace ingestion (disabled by default so arca-cert
+    # works without ArcaQ when the feature is off).
+    arcaq_provo_enabled: bool = os.environ.get("CERT_ARCAQ_PROVO_ENABLED", "false").lower() in ("1", "true", "yes")
+    arcaq_provo_topic: str = os.environ.get("CERT_ARCAQ_PROVO_TOPIC", "arcaq.prov-o.traces")
 
 
 settings = Settings()

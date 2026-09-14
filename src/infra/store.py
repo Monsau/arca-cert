@@ -19,6 +19,7 @@ from ..core.domain.cert_models import (
     RemediationPlan,
     ScoreInput,
 )
+from ..core.domain.provenance import ProvenanceTraceRef
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS certification_dossiers (
@@ -60,6 +61,14 @@ CREATE TABLE IF NOT EXISTS certification_packages (
     binder_id TEXT NOT NULL,
     remediation_id TEXT,
     generated_at TEXT
+);
+CREATE TABLE IF NOT EXISTS provenance_trace_refs (
+    id TEXT PRIMARY KEY,
+    target TEXT NOT NULL,
+    trace_id TEXT NOT NULL,
+    activity TEXT NOT NULL,
+    trace_uri TEXT,
+    occurred_at TEXT NOT NULL
 );
 """
 
@@ -217,6 +226,27 @@ class SqlCertRepository:
             rows = self._conn.execute("SELECT * FROM readiness_assessments").fetchall()
         return [self._to_assessment(r) for r in rows]
 
+    # -- provenance trace refs ------------------------------------------------
+
+    def save_provenance_trace_ref(self, ref: ProvenanceTraceRef) -> None:
+        self._conn.execute(
+            "INSERT INTO provenance_trace_refs (id, target, trace_id, activity,"
+            " trace_uri, occurred_at) VALUES (?,?,?,?,?,?)"
+            " ON CONFLICT(id) DO UPDATE SET activity=excluded.activity,"
+            " trace_uri=excluded.trace_uri, occurred_at=excluded.occurred_at",
+            (ref.id, ref.target, ref.trace_id, ref.activity, ref.trace_uri,
+             ref.occurred_at.isoformat()),
+        )
+        self._conn.commit()
+
+    def list_provenance_trace_refs(self, target: str) -> list:
+        rows = self._conn.execute(
+            "SELECT * FROM provenance_trace_refs WHERE target = ?"
+            " ORDER BY occurred_at DESC",
+            (target,),
+        ).fetchall()
+        return [self._to_provenance_trace_ref(r) for r in rows]
+
     # -- certification packages -----------------------------------------------
 
     def save_package(self, package: CertificationPackage) -> None:
@@ -304,6 +334,16 @@ class SqlCertRepository:
             binder=binder,
             remediation_id=row["remediation_id"],
             generated_at=_dt(row["generated_at"]),
+        )
+
+    def _to_provenance_trace_ref(self, row) -> ProvenanceTraceRef:
+        return ProvenanceTraceRef(
+            id=row["id"],
+            target=row["target"],
+            trace_id=row["trace_id"],
+            activity=row["activity"],
+            trace_uri=row["trace_uri"],
+            occurred_at=_dt(row["occurred_at"]),
         )
 
 

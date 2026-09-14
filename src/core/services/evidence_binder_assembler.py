@@ -18,6 +18,13 @@ class EvidenceBinderAssembler:
         binder = EvidenceBinder(dossier_id=dossier.id, evidence=list(dossier.evidence))
         for ref in additional_refs or []:
             binder.add(EvidenceRef(**ref))
+        for trace_ref in self._repo.list_provenance_trace_refs(dossier.target):
+            binder.add(EvidenceRef(
+                source="arcaq.prov-o",
+                ref_id=trace_ref.trace_id,
+                description=f"{trace_ref.activity}"
+                            f"{(' ' + trace_ref.trace_uri) if trace_ref.trace_uri else ''}",
+            ))
         self._repo.save_binder(binder)
         self._publisher.publish(evidence_binder_assembled(binder))
         if self._collector:

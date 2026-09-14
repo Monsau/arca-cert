@@ -10,6 +10,7 @@ from .config import settings
 from .core.services.cert_service import CertService
 from .infra import otel
 from .infra.kafka import BenchResultConsumer, KafkaEvent, KafkaProducer
+from .infra.provenance_consumer import ProvenanceTraceConsumer
 from .infra.soc import SOCCollector
 from .infra.store import SqlCertRepository, connect_sqlite
 from .policies.oidc import OIDCValidator
@@ -49,8 +50,18 @@ async def lifespan(app: FastAPI):
     consumer = BenchResultConsumer(app.state.cert_service)
     app.state.bench_consumer = consumer
     consumer.start()
+
+    provenance_consumer = None
+    # Optional ArcaQ PROV-O trace ingestion. Disabled by default so arca-cert
+    # can run without ArcaQ when the feature is not needed.
+    if settings.arcaq_provo_enabled:
+        provenance_consumer = ProvenanceTraceConsumer(repository)
+        provenance_consumer.start()
+    app.state.provenance_consumer = provenance_consumer
     yield
     consumer.stop()
+    if provenance_consumer:
+        provenance_consumer.stop()
 
 
 app = FastAPI(
