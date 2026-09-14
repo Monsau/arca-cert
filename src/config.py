@@ -1,11 +1,12 @@
 """Configuration loaded from environment variables and Vault."""
 import os
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="CERT_")
+    model_config = SettingsConfigDict(env_prefix="CERT_", populate_by_name=True)
 
     app_name: str = "Arca Cert - Certification Dossier Builder"
     environment: str = os.environ.get("ENVIRONMENT", "dev")
@@ -28,6 +29,30 @@ class Settings(BaseSettings):
     # works without ArcaQ when the feature is off).
     arcaq_provo_enabled: bool = os.environ.get("CERT_ARCAQ_PROVO_ENABLED", "false").lower() in ("1", "true", "yes")
     arcaq_provo_topic: str = os.environ.get("CERT_ARCAQ_PROVO_TOPIC", "arcaq.prov-o.traces")
+
+    # Optional OOC governance gate. Weak coupling: default endpoint follows the
+    # ArcaQ DNS convention; the cognitive profile toggles only the enable flag.
+    ooc_enabled: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "OOC_ENABLED",
+            "CERT_OOC_ENABLED",
+        ),
+    )
+    ooc_url: str = Field(
+        default="http://arcaq-api.arcaq.svc.cluster.local:8000/api/v1/ooc",
+        validation_alias=AliasChoices(
+            "OOC_URL",
+            "CERT_OOC_URL",
+        ),
+    )
+    ooc_timeout_seconds: float = Field(
+        default=5.0,
+        validation_alias=AliasChoices(
+            "OOC_TIMEOUT_SECONDS",
+            "CERT_OOC_TIMEOUT_SECONDS",
+        ),
+    )
 
 
 settings = Settings()

@@ -10,6 +10,7 @@ from .config import settings
 from .core.services.cert_service import CertService
 from .infra import otel
 from .infra.kafka import BenchResultConsumer, KafkaEvent, KafkaProducer
+from .infra.ooc_client import build_ooc_gate_client
 from .infra.provenance_consumer import ProvenanceTraceConsumer
 from .infra.soc import SOCCollector
 from .infra.store import SqlCertRepository, connect_sqlite
@@ -45,7 +46,10 @@ async def lifespan(app: FastAPI):
         audience=settings.oidc_audience,
     )
     app.state.cert_service = CertService(
-        repository, publisher=kafka_publisher, collector=collector
+        repository,
+        publisher=kafka_publisher,
+        collector=collector,
+        ooc_client=build_ooc_gate_client(),
     )
     consumer = BenchResultConsumer(app.state.cert_service)
     app.state.bench_consumer = consumer

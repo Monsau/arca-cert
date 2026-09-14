@@ -20,14 +20,16 @@ from .certification_package_builder import CertificationPackageBuilder
 from .evidence_binder_assembler import EvidenceBinderAssembler
 from .readiness_assessor import ReadinessAssessor
 from .remediation_planner import RemediationPlanner
+from ...infra.ooc_client import OOCGateClient, OOCNotApprovedError, build_ooc_gate_client
 
 
 class CertService:
     def __init__(self, repository, publisher: OutboxPublisher | None = None,
-                 collector=None):
+                 collector=None, ooc_client: OOCGateClient | None = None):
         self._repo = repository
         self._publisher = publisher or OutboxPublisher()
         self._collector = collector
+        self._ooc_client = ooc_client if ooc_client is not None else build_ooc_gate_client()
         self._package_builder = CertificationPackageBuilder(
             repository, publisher, collector
         )
@@ -46,10 +48,14 @@ class CertService:
         plan = self._remediation.get_plan(package.dossier.id)
         return package.dossier, plan
 
-    def publish_dossier(self, dossier_id: str, reviewer: str) -> CertificationDossier:
+    def publish_dossier(self, dossier_id: str, reviewer: str, version: str | None = None) -> CertificationDossier:
         dossier = self._repo.get_dossier(dossier_id)
         if dossier is None:
             raise LookupError(f"dossier {dossier_id} not found")
+        if not self._ooc_client.is_approved(dossier.target, version):
+            raise OOCNotApprovedError(
+                f"dossier {dossier_id}: no approved OOC for target {dossier.target}"
+            )
         dossier.publish(reviewer)
         self._repo.save_dossier(dossier)
         self._publisher.publish(dossier_published(dossier))
