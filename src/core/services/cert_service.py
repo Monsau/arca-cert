@@ -8,6 +8,7 @@ Facade that orchestrates the specialised cert services:
 
 Backwards-compatible helpers for dossier/remain keep existing tests green.
 """
+from ...config import settings
 from ..domain.cert_models import CertificationDossier, DossierStatus
 from ..events.cert_events import (
     OutboxPublisher,
@@ -21,15 +22,18 @@ from .evidence_binder_assembler import EvidenceBinderAssembler
 from .readiness_assessor import ReadinessAssessor
 from .remediation_planner import RemediationPlanner
 from ...infra.ooc_client import OOCGateClient, OOCNotApprovedError, build_ooc_gate_client
+from ...infra.vault import Signer, get_signer
 
 
 class CertService:
     def __init__(self, repository, publisher: OutboxPublisher | None = None,
-                 collector=None, ooc_client: OOCGateClient | None = None):
+                 collector=None, ooc_client: OOCGateClient | None = None,
+                 signer: Signer | None = None):
         self._repo = repository
         self._publisher = publisher or OutboxPublisher()
         self._collector = collector
         self._ooc_client = ooc_client if ooc_client is not None else build_ooc_gate_client()
+        self._signer = signer if signer is not None else get_signer()
         self._package_builder = CertificationPackageBuilder(
             repository, publisher, collector
         )
@@ -48,6 +52,14 @@ class CertService:
         plan = self._remediation.get_plan(package.dossier.id)
         return package.dossier, plan
 
+    def _sealer(self):
+        key = settings.vault_transit_key
+        return lambda payload: self._signer.sign(key, payload)
+
+    def _verifier(self):
+        key = settings.vault_transit_key
+        return lambda payload, signature: self._signer.verify(key, payload, signature)
+
     def publish_dossier(self, dossier_id: str, reviewer: str, version: str | None = None) -> CertificationDossier:
         dossier = self._repo.get_dossier(dossier_id)
         if dossier is None:
@@ -56,7 +68,7 @@ class CertService:
             raise OOCNotApprovedError(
                 f"dossier {dossier_id}: no approved OOC for target {dossier.target}"
             )
-        dossier.publish(reviewer)
+        dossier.publish(reviewer, sealer=self._sealer())
         self._repo.save_dossier(dossier)
         self._publisher.publish(dossier_published(dossier))
         package_id = dossier.id

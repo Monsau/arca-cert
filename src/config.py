@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     database_url: str = os.environ.get("DATABASE_URL", "")
     vault_addr: str = os.environ.get("VAULT_ADDR", "")
     vault_role: str = os.environ.get("VAULT_ROLE", "arca-cert")
+    vault_transit_key: str = os.environ.get("VAULT_TRANSIT_KEY", "arca-cert")
+    # Signature backend: "dev" (HMAC test signer) or "vault" (Vault Transit/PKI).
+    # Production must use "vault"; dev/test may use "dev" explicitly.
+    signer_backend: str = os.environ.get("SIGNER_BACKEND", "dev")
     kafka_bootstrap_servers: str = os.environ.get("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
     kafka_bench_topic: str = os.environ.get("KAFKA_BENCH_TOPIC", "bench.results")
     kafka_consumer_group: str = os.environ.get("KAFKA_CONSUMER_GROUP", "arca-cert")

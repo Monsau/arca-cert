@@ -206,7 +206,7 @@ class CertificationDossier:
     def is_expired(self) -> bool:
         return self.status == DossierStatus.PUBLISHED and _now() > self.valid_until
 
-    def publish(self, reviewer: str) -> None:
+    def publish(self, reviewer: str, sealer=None) -> None:
         if self.status is not DossierStatus.DRAFT:
             raise ValueError(f"dossier {self.id} is {self.status.value}")
         if not reviewer:
@@ -214,7 +214,8 @@ class CertificationDossier:
         self.reviewer = reviewer
         self.status = DossierStatus.PUBLISHED
         self.published_at = _now()
-        self.seal = hashlib.sha256(self._canonical()).hexdigest()
+        canonical = self._canonical()
+        self.seal = sealer(canonical) if sealer else hashlib.sha256(canonical).hexdigest()
 
     def revoke(self, reviewer: str, reason: str) -> None:
         if self.status is not DossierStatus.PUBLISHED:
@@ -226,10 +227,13 @@ class CertificationDossier:
         self.revocation_reason = reason
         self.seal = None
 
-    def verify_seal(self) -> bool:
+    def verify_seal(self, verifier=None) -> bool:
         if self.seal is None or self.status != DossierStatus.PUBLISHED:
             return False
-        return self.seal == hashlib.sha256(self._canonical()).hexdigest()
+        canonical = self._canonical()
+        if verifier:
+            return verifier(canonical, self.seal)
+        return self.seal == hashlib.sha256(canonical).hexdigest()
 
     def failing_dimensions(self, threshold: float = 0.7) -> list:
         return [s.dimension for s in self.scores if s.value < threshold]
