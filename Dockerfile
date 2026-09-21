@@ -9,6 +9,8 @@ RUN useradd --create-home --uid 10001 appuser
 WORKDIR /app
 COPY --from=builder /install /usr/local
 COPY src/ ./src/
+# GraphQL schema files live in contracts/ (loaded via ariadne at startup).
+COPY contracts/ ./contracts/
 USER appuser
 EXPOSE 8093
 HEALTHCHECK --interval=30s --timeout=3s --retries=3 \
