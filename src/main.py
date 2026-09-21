@@ -51,9 +51,14 @@ async def lifespan(app: FastAPI):
         collector=collector,
         ooc_client=build_ooc_gate_client(),
     )
-    consumer = BenchResultConsumer(app.state.cert_service)
-    app.state.bench_consumer = consumer
-    consumer.start()
+    consumer = None
+    # Kafka consumption is enabled by default so cert packages react to
+    # bench.results events. Set CERT_KAFKA_CONSUME=0 to disable it (dev
+    # profiles without a broker), same convention as trust and studio.
+    if os.environ.get("CERT_KAFKA_CONSUME", "1") != "0":
+        consumer = BenchResultConsumer(app.state.cert_service)
+        app.state.bench_consumer = consumer
+        consumer.start()
 
     provenance_consumer = None
     # Optional ArcaQ PROV-O trace ingestion. Disabled by default so arca-cert
@@ -63,7 +68,8 @@ async def lifespan(app: FastAPI):
         provenance_consumer.start()
     app.state.provenance_consumer = provenance_consumer
     yield
-    consumer.stop()
+    if consumer:
+        consumer.stop()
     if provenance_consumer:
         provenance_consumer.stop()
 
