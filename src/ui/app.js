@@ -8,15 +8,17 @@ function statusClass(level) {
   return 'status ' + level.toLowerCase().replace(/_/g, '-');
 }
 
+// Security by design: the Suite portal attaches the SSO access token
+// server-side on every proxied call, so the UI never sends credentials.
 async function getJSON(path) {
-  const res = await fetch(path, { headers: { 'Authorization': 'Bearer dev' } });
+  const res = await fetch(path);
   return res.ok ? res.json() : { error: res.statusText };
 }
 
 async function postJSON(path, body) {
   const res = await fetch(path, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer dev' },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
   return res.ok ? res.json() : { error: await res.text() };
