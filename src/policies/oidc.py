@@ -1,9 +1,10 @@
 """OIDC/JWT authentication for arca-cert (ADR-009).
 
-Supports two modes:
-- Development/tests: HS256 tokens validated with CERT_JWT_SECRET.
-- Production: RS256 tokens validated via OIDC discovery (CERT_OIDC_ISSUER,
-  CERT_OIDC_AUDIENCE) and JWKS.
+Security by design: only asymmetric RS256 tokens verified against the
+configured Keycloak JWKS are accepted. The JWKS URL is provided via
+CERT_OIDC_JWKS_URL because the public issuer URL does not resolve inside
+the cluster. The Suite portal injects the user's SSO access token on every
+call; there is no local token minting and no symmetric fallback.
 """
 import logging
 import os
@@ -42,9 +43,10 @@ def _extract_roles(claims: dict) -> list[str]:
 
 
 class OIDCValidator:
-    def __init__(self, secret: str | None = None, issuer: str | None = None,
+    """Strict RS256 validator backed by a Keycloak realm JWKS."""
+
+    def __init__(self, issuer: str | None = None,
                  audience: str | None = None, jwks: list | None = None):
-        self._secret = secret
         self._issuer = issuer
         self._audience = audience
         self._jwks = jwks or []
@@ -54,39 +56,44 @@ class OIDCValidator:
         if not token:
             raise JWTError("missing token")
         header = jwt.get_unverified_header(token)
-        algo = header.get("alg", "HS256")
-        if algo == "HS256":
-            if not self._secret:
-                raise JWTError("HS256 configured without secret")
-            claims = jwt.decode(token, self._secret, algorithms=["HS256"])
-        elif algo == "RS256":
-            kid = header.get("kid")
-            key = self._kid_to_key.get(kid) if kid else None
-            if key is None:
-                raise JWTError(f"RS256 key not found for kid={kid}")
-            claims = jwt.decode(
-                token,
-                key,
-                algorithms=["RS256"],
-                issuer=self._issuer,
-                audience=self._audience,
-            )
-        else:
-            raise JWTError(f"unsupported algorithm {algo}")
+        if header.get("alg") != "RS256":
+            raise JWTError(f"unsupported algorithm {header.get('alg')}")
+        kid = header.get("kid")
+        key = self._kid_to_key.get(kid) if kid else None
+        if key is None:
+            raise JWTError(f"RS256 key not found for kid={kid}")
+        claims = jwt.decode(
+            token,
+            key,
+            algorithms=["RS256"],
+            issuer=self._issuer,
+            audience=self._audience,
+        )
         return AuthenticatedUser.from_claims(claims)
 
 
+_JWKS_CACHE: dict = {}
+
+
+def _load_jwks(url: str) -> list:
+    """Fetch the Keycloak realm JWKS when CERT_OIDC_JWKS_URL is set.
+
+    The public issuer URL does not resolve inside the cluster, so the suite
+    ships the in-cluster Keycloak JWKS URL via configuration.
+    """
+    if not url:
+        return []
+    if url not in _JWKS_CACHE:
+        import httpx
+
+        resp = httpx.get(url, timeout=10.0)
+        resp.raise_for_status()
+        _JWKS_CACHE[url] = resp.json().get("keys", [])
+    return _JWKS_CACHE[url]
+
+
 def validator_from_settings(settings) -> OIDCValidator:
-    secret = os.environ.get("CERT_JWT_SECRET") or settings.vault_addr
-    issuer = os.environ.get("CERT_OIDC_ISSUER")
-    audience = os.environ.get("CERT_OIDC_AUDIENCE", "arca-cert")
-    return OIDCValidator(secret=secret, issuer=issuer, audience=audience)
-
-
-def mint_dev_token(sub: str, roles: list[str], secret: str) -> str:
-    """Issue an HS256 dev token. Only for local development and tests."""
-    return jwt.encode(
-        {"sub": sub, "email": f"{sub}@arca.local", "roles": roles},
-        secret,
-        algorithm="HS256",
-    )
+    issuer = os.environ.get("CERT_OIDC_ISSUER") or settings.oidc_issuer or None
+    audience = os.environ.get("CERT_OIDC_AUDIENCE") or settings.oidc_audience
+    jwks = _load_jwks(os.environ.get("CERT_OIDC_JWKS_URL", ""))
+    return OIDCValidator(issuer=issuer, audience=audience, jwks=jwks)

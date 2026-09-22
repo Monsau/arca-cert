@@ -10,8 +10,11 @@ from src.main import app  # noqa: E402
 
 
 @pytest.fixture
-def client():
+def client(dev_token):
     with TestClient(app) as c:
+        # Every call carries a valid SSO access token, like the Suite portal
+        # does in production (security by design: no anonymous fallback).
+        c.headers["Authorization"] = f"Bearer {dev_token}"
         yield c
 
 
@@ -115,15 +118,9 @@ def test_mcp_publish_cert_package(client):
     assert response.json()["status"] == "published"
 
 
-def test_auth_required_when_enabled():
-    original = os.environ.get("CERT_AUTH_DISABLED")
-    os.environ["CERT_AUTH_DISABLED"] = "false"
-    try:
-        with TestClient(app) as c:
-            response = c.get("/api/v1/dossiers")
-            assert response.status_code == 401
-    finally:
-        if original is None:
-            os.environ.pop("CERT_AUTH_DISABLED", None)
-        else:
-            os.environ["CERT_AUTH_DISABLED"] = original
+def test_auth_required_without_token():
+    """Security by design: no Authorization header means 401 — there is no
+    anonymous or dev bypass."""
+    with TestClient(app) as c:
+        response = c.get("/api/v1/dossiers")
+        assert response.status_code == 401

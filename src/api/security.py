@@ -18,16 +18,12 @@ def get_validator(request: Request) -> OIDCValidator:
     return request.app.state.oidc_validator
 
 
-def _dev_bypass_enabled() -> bool:
-    return os.environ.get("CERT_AUTH_DISABLED", "").lower() in ("1", "true", "yes")
-
-
 def get_current_user(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
 ) -> dict:
-    if _dev_bypass_enabled():
-        return {"sub": "dev-user", "email": "dev@arca.local", "roles": ["cert-admin"]}
+    # Security by design: no dev bypass — the Suite portal injects the user's
+    # Keycloak access token on every call.
     if credentials is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

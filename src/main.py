@@ -14,7 +14,7 @@ from .infra.ooc_client import build_ooc_gate_client
 from .infra.provenance_consumer import ProvenanceTraceConsumer
 from .infra.soc import SOCCollector
 from .infra.store import SqlCertRepository, connect_sqlite
-from .policies.oidc import OIDCValidator
+from .policies.oidc import OIDCValidator, _load_jwks
 
 
 class KafkaDomainEventPublisher:
@@ -41,9 +41,9 @@ async def lifespan(app: FastAPI):
     app.state.soc_collector = collector
     app.state.kafka_publisher = kafka_publisher
     app.state.oidc_validator = OIDCValidator(
-        secret=settings.jwt_secret,
-        issuer=settings.oidc_issuer,
+        issuer=settings.oidc_issuer or None,
         audience=settings.oidc_audience,
+        jwks=_load_jwks(settings.oidc_jwks_url),
     )
     app.state.cert_service = CertService(
         repository,
