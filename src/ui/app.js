@@ -1,4 +1,6 @@
-const API = '/api/v1';
+// Portal-aware API base: /m/<key>/api/v1 when mounted under the Suite portal.
+const _pm = window.location.pathname.match(/^\/m\/([^/]+)\//);
+const API = _pm ? `/m/${_pm[1]}/api/v1` : '/api/v1';
 
 function $(sel) { return document.querySelector(sel); }
 
@@ -104,7 +106,7 @@ async function loadReadiness() {
 }
 
 async function loadSOC() {
-  const health = await getJSON('/healthz');
+  const health = await getJSON(`${_pm ? `/m/${_pm[1]}` : ''}/healthz`);
   $('#soc-health').textContent = JSON.stringify(health, null, 2);
   $('#soc-risk').textContent = 'Risk scoring is computed from audit events collected by the embedded SOC.';
   $('#soc-events').textContent = 'Events are available via the SOC collector API.';
