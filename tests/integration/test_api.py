@@ -124,3 +124,16 @@ def test_auth_required_without_token():
     with TestClient(app) as c:
         response = c.get("/api/v1/dossiers")
         assert response.status_code == 401
+
+
+def test_dossier_with_unknown_score_keys_is_422_not_500(client):
+    """Regression: ScoreInput(**s) raised TypeError on unknown keys -> 500.
+    Payload validation failures must answer 422 (honest API contract)."""
+    response = client.post("/api/v1/dossiers", json={
+        "target": "arca-hub",
+        "scores": [{"run_id": "r1", "passed": 1, "total": 1}]})
+    assert response.status_code == 422
+    response = client.post("/api/v1/packages", json={
+        "target": "arca-hub",
+        "scores": [{"run_id": "r1", "passed": 1, "total": 1}]})
+    assert response.status_code == 422

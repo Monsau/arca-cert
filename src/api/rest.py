@@ -41,7 +41,7 @@ def build_dossier(
         raise HTTPException(status_code=422, detail="target and scores are required")
     try:
         dossier, plan = _service(request).build_dossier(target, scores, evidence, threshold)
-    except ValueError as exc:
+    except (ValueError, TypeError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     audit(_service(request), "rest.dossier.created",
           {"target": target, "dossier_id": dossier.id, "user": user.get("sub")},
@@ -163,7 +163,7 @@ def build_package(
         package = _service(request).build_package(
             target, scores, evidence, threshold, valid_days
         )
-    except ValueError as exc:
+    except (ValueError, TypeError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     audit(_service(request), "rest.package.created",
           {"target": target, "package_id": package["id"], "user": user.get("sub")},
@@ -224,7 +224,7 @@ def assess_readiness(
         raise HTTPException(status_code=422, detail="target and scores are required")
     try:
         assessment = _service(request).assess_readiness(target, scores, threshold)
-    except ValueError as exc:
+    except (ValueError, TypeError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     audit(_service(request), "rest.readiness.assessed",
           {"target": target, "assessment_id": assessment["id"], "user": user.get("sub")},
