@@ -2,10 +2,13 @@
 import contextlib
 import os
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Request
+from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
+from fastapi.security import HTTPAuthorizationCredentials
 from fastapi.staticfiles import StaticFiles
 
 from .api import graphql, mcp, rest
+from .api.security import get_current_user
 from .config import settings
 from .core.services.cert_service import CertService
 from .infra import otel
@@ -74,16 +77,59 @@ async def lifespan(app: FastAPI):
         provenance_consumer.stop()
 
 
+def _docs_metadata_guard(request: Request) -> None:
+    """Zero Trust gate for the API metadata endpoints (/docs, /redoc,
+    /openapi.json).
+
+    Dev/standalone keeps them open (module dev-gate convention); every other
+    environment requires a valid Keycloak JWT through the existing JWKS/RS256
+    stack (ADR-009). The endpoints are re-served below with this guard — they
+    are protected, not hidden. Health endpoints stay open for k8s probes.
+    """
+    if settings.environment == "dev":
+        return
+    auth = request.headers.get("Authorization", "")
+    if auth.lower().startswith("bearer "):
+        credentials = HTTPAuthorizationCredentials(
+            scheme="Bearer", credentials=auth[7:]
+        )
+    else:
+        credentials = None
+    get_current_user(request, credentials)
+
+
 app = FastAPI(
     title=settings.app_name,
     version="0.1.0",
     lifespan=lifespan,
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
 )
 otel.instrument(app)
 
 app.include_router(rest.router)
 app.include_router(mcp.router)
 app.include_router(graphql.router)
+
+
+@app.get("/openapi.json", include_in_schema=False)
+async def openapi_json(_: None = Depends(_docs_metadata_guard)):
+    return app.openapi()
+
+
+@app.get("/docs", include_in_schema=False)
+async def swagger_ui(_: None = Depends(_docs_metadata_guard)):
+    return get_swagger_ui_html(
+        openapi_url="/openapi.json", title=f"{settings.app_name} - Swagger UI"
+    )
+
+
+@app.get("/redoc", include_in_schema=False)
+async def redoc_ui(_: None = Depends(_docs_metadata_guard)):
+    return get_redoc_html(
+        openapi_url="/openapi.json", title=f"{settings.app_name} - ReDoc"
+    )
 
 # Serve embedded cert UI static files when present.
 ui_dir = os.path.join(os.path.dirname(__file__), "ui")
