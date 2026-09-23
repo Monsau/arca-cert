@@ -17,6 +17,18 @@ from .infra.ooc_client import build_ooc_gate_client
 from .infra.provenance_consumer import ProvenanceTraceConsumer
 from .infra.soc import SOCCollector
 from .infra.store import SqlCertRepository, connect_sqlite
+
+
+def build_repository() -> SqlCertRepository:
+    """Store backend selection (suite platform profile).
+
+    If DATABASE_URL is set (Kubernetes secret in production) the repository
+    persists to PostgreSQL through SQLAlchemy; otherwise fall back to
+    in-memory SQLite for dev/tests.
+    """
+    if settings.database_url:
+        return SqlCertRepository(settings.database_url)
+    return SqlCertRepository(connect_sqlite())
 from .policies.oidc import OIDCValidator, _load_jwks
 
 
@@ -36,7 +48,7 @@ class KafkaDomainEventPublisher:
 
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
-    repository = SqlCertRepository(connect_sqlite())
+    repository = build_repository()
     collector = SOCCollector()
     kafka_producer = KafkaProducer()
     kafka_publisher = KafkaDomainEventPublisher(kafka_producer)

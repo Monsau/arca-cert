@@ -9,3 +9,5 @@ ariadne>=0.23
 kafka-python-ng>=2.0
 httpx>=0.27
 prometheus_client>=0.20
+sqlalchemy>=2.0
+psycopg[binary]>=3.1  # PostgreSQL driver for the SQLAlchemy store (ADR-005)

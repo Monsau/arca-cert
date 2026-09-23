@@ -1,10 +1,21 @@
 """SQL repository for the cert store (ADR-005, ADR-009).
 
-PostgreSQL in production; SQLite is accepted for dev/tests.
+SQLAlchemy backend: PostgreSQL in production (via DATABASE_URL, psycopg v3
+driver); SQLite is accepted for dev/tests (in-memory by default).
+Same persistence profile as arca-packs and arca-flow (suite platform profile).
 """
 import json
-import sqlite3
 from datetime import datetime
+
+from sqlalchemy import Float, Integer, String, Text, create_engine
+from sqlalchemy.orm import (
+    DeclarativeBase,
+    Mapped,
+    Session,
+    mapped_column,
+    sessionmaker,
+)
+from sqlalchemy.pool import StaticPool
 
 from ..core.domain.cert_models import (
     BenchResult,
@@ -21,336 +32,393 @@ from ..core.domain.cert_models import (
 )
 from ..core.domain.provenance import ProvenanceTraceRef
 
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS certification_dossiers (
-    id TEXT PRIMARY KEY,
-    target TEXT NOT NULL,
-    scores TEXT NOT NULL,
-    evidence TEXT NOT NULL,
-    valid_days INTEGER NOT NULL,
-    status TEXT NOT NULL,
-    reviewer TEXT,
-    published_at TEXT,
-    seal TEXT,
-    revoked_at TEXT,
-    revocation_reason TEXT
-);
-CREATE TABLE IF NOT EXISTS remediation_plans (
-    id TEXT PRIMARY KEY,
-    dossier_id TEXT NOT NULL UNIQUE,
-    items TEXT NOT NULL,
-    created_at TEXT
-);
-CREATE TABLE IF NOT EXISTS evidence_binders (
-    id TEXT PRIMARY KEY,
-    dossier_id TEXT NOT NULL UNIQUE,
-    evidence TEXT NOT NULL,
-    assembled_at TEXT
-);
-CREATE TABLE IF NOT EXISTS readiness_assessments (
-    id TEXT PRIMARY KEY,
-    target TEXT NOT NULL,
-    dimension_scores TEXT NOT NULL,
-    threshold REAL NOT NULL,
-    assessed_at TEXT
-);
-CREATE TABLE IF NOT EXISTS certification_packages (
-    id TEXT PRIMARY KEY,
-    dossier_id TEXT NOT NULL UNIQUE,
-    assessment_id TEXT NOT NULL,
-    binder_id TEXT NOT NULL,
-    remediation_id TEXT,
-    generated_at TEXT
-);
-CREATE TABLE IF NOT EXISTS provenance_trace_refs (
-    id TEXT PRIMARY KEY,
-    target TEXT NOT NULL,
-    trace_id TEXT NOT NULL,
-    activity TEXT NOT NULL,
-    trace_uri TEXT,
-    occurred_at TEXT NOT NULL
-);
-"""
+
+class Base(DeclarativeBase):
+    pass
+
+
+class DossierRow(Base):
+    __tablename__ = "certification_dossiers"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    target: Mapped[str] = mapped_column(String(256))
+    scores: Mapped[str] = mapped_column(Text)
+    evidence: Mapped[str] = mapped_column(Text)
+    valid_days: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(16))
+    reviewer: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    published_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    seal: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    revoked_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    revocation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class RemediationPlanRow(Base):
+    __tablename__ = "remediation_plans"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    dossier_id: Mapped[str] = mapped_column(String(64), unique=True)
+    items: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class EvidenceBinderRow(Base):
+    __tablename__ = "evidence_binders"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    dossier_id: Mapped[str] = mapped_column(String(64), unique=True)
+    evidence: Mapped[str] = mapped_column(Text)
+    assembled_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class ReadinessAssessmentRow(Base):
+    __tablename__ = "readiness_assessments"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    target: Mapped[str] = mapped_column(String(256))
+    dimension_scores: Mapped[str] = mapped_column(Text)
+    threshold: Mapped[float] = mapped_column(Float)
+    assessed_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class CertificationPackageRow(Base):
+    __tablename__ = "certification_packages"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    dossier_id: Mapped[str] = mapped_column(String(64), unique=True)
+    assessment_id: Mapped[str] = mapped_column(String(64))
+    binder_id: Mapped[str] = mapped_column(String(64))
+    remediation_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    generated_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class ProvenanceTraceRefRow(Base):
+    __tablename__ = "provenance_trace_refs"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    target: Mapped[str] = mapped_column(String(256))
+    trace_id: Mapped[str] = mapped_column(String(128))
+    activity: Mapped[str] = mapped_column(String(256))
+    trace_uri: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    occurred_at: Mapped[str] = mapped_column(String(64))
 
 
 class SqlCertRepository:
-    def __init__(self, connection: sqlite3.Connection):
-        self._conn = connection
-        self._conn.executescript(_SCHEMA)
-        self._conn.commit()
+    """SQL-backed repository for certification dossiers and related records.
+
+    Accepts any SQLAlchemy DSN. A bare ``postgresql://`` DSN is rewritten to
+    ``postgresql+psycopg://`` because the image ships psycopg v3, not
+    psycopg2 (same convention as arca-packs / arca-flow).
+    """
+
+    def __init__(self, dsn: str):
+        if dsn.startswith("postgresql://"):
+            dsn = "postgresql+psycopg://" + dsn[len("postgresql://"):]
+        kwargs: dict = {}
+        if ":memory:" in dsn:
+            # A default in-memory SQLite database would use one connection per
+            # thread and lose data across sessions; pin a single shared
+            # connection instead so the repository behaves like a real store.
+            kwargs = {
+                "poolclass": StaticPool,
+                "connect_args": {"check_same_thread": False},
+            }
+        self.engine = create_engine(dsn, **kwargs)
+        Base.metadata.create_all(self.engine)
+        self._sessionmaker = sessionmaker(bind=self.engine, expire_on_commit=False)
+
+    def session(self) -> Session:
+        return self._sessionmaker()
 
     # -- dossiers -------------------------------------------------------------
 
     def save_dossier(self, dossier: CertificationDossier) -> None:
-        self._conn.execute(
-            "INSERT INTO certification_dossiers (id, target, scores, evidence,"
-            " valid_days, status, reviewer, published_at, seal, revoked_at, revocation_reason)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET"
-            " status=excluded.status, reviewer=excluded.reviewer,"
-            " published_at=excluded.published_at, seal=excluded.seal,"
-            " revoked_at=excluded.revoked_at, revocation_reason=excluded.revocation_reason",
-            (
-                dossier.id,
-                dossier.target,
-                json.dumps([s.to_dict() for s in dossier.scores]),
-                json.dumps([e.to_dict() for e in dossier.evidence]),
-                dossier.valid_days,
-                dossier.status.value,
-                dossier.reviewer,
-                dossier.published_at.isoformat() if dossier.published_at else None,
-                dossier.seal,
-                dossier.revoked_at.isoformat() if dossier.revoked_at else None,
-                dossier.revocation_reason,
-            ),
-        )
-        self._conn.commit()
+        with self.session() as s:
+            row = s.get(DossierRow, dossier.id)
+            if row is None:
+                s.add(DossierRow(
+                    id=dossier.id,
+                    target=dossier.target,
+                    scores=json.dumps([sc.to_dict() for sc in dossier.scores]),
+                    evidence=json.dumps([e.to_dict() for e in dossier.evidence]),
+                    valid_days=dossier.valid_days,
+                    status=dossier.status.value,
+                    reviewer=dossier.reviewer,
+                    published_at=dossier.published_at.isoformat()
+                    if dossier.published_at else None,
+                    seal=dossier.seal,
+                    revoked_at=dossier.revoked_at.isoformat()
+                    if dossier.revoked_at else None,
+                    revocation_reason=dossier.revocation_reason,
+                ))
+            else:
+                # Upsert only the lifecycle fields; scores and evidence are
+                # immutable once stored (same semantics as the previous
+                # sqlite ON CONFLICT clause).
+                row.status = dossier.status.value
+                row.reviewer = dossier.reviewer
+                row.published_at = (dossier.published_at.isoformat()
+                                    if dossier.published_at else None)
+                row.seal = dossier.seal
+                row.revoked_at = (dossier.revoked_at.isoformat()
+                                  if dossier.revoked_at else None)
+                row.revocation_reason = dossier.revocation_reason
+            s.commit()
 
     def get_dossier(self, dossier_id: str) -> CertificationDossier | None:
-        row = self._conn.execute(
-            "SELECT * FROM certification_dossiers WHERE id = ?", (dossier_id,)
-        ).fetchone()
-        return self._to_dossier(row) if row else None
+        with self.session() as s:
+            row = s.get(DossierRow, dossier_id)
+            return self._to_dossier(row) if row else None
 
     def list_dossiers(self, target: str | None = None) -> list:
-        if target:
-            rows = self._conn.execute(
-                "SELECT * FROM certification_dossiers WHERE target = ?", (target,)
-            ).fetchall()
-        else:
-            rows = self._conn.execute("SELECT * FROM certification_dossiers").fetchall()
-        return [self._to_dossier(r) for r in rows]
+        with self.session() as s:
+            q = s.query(DossierRow)
+            if target:
+                q = q.filter_by(target=target)
+            rows = q.all()
+            return [self._to_dossier(r) for r in rows]
 
     # -- remediation ----------------------------------------------------------
 
     def save_remediation(self, plan: RemediationPlan) -> None:
-        self._conn.execute(
-            "INSERT INTO remediation_plans (id, dossier_id, items, created_at)"
-            " VALUES (?,?,?,?) ON CONFLICT(dossier_id) DO UPDATE SET"
-            " items=excluded.items, created_at=excluded.created_at",
-            (
-                plan.id,
-                plan.dossier_id,
-                json.dumps([i.to_dict() for i in plan.items]),
-                plan.created_at.isoformat(),
-            ),
-        )
-        self._conn.commit()
+        with self.session() as s:
+            row = s.query(RemediationPlanRow).filter_by(
+                dossier_id=plan.dossier_id).one_or_none()
+            if row is None:
+                s.add(RemediationPlanRow(
+                    id=plan.id,
+                    dossier_id=plan.dossier_id,
+                    items=json.dumps([i.to_dict() for i in plan.items]),
+                    created_at=plan.created_at.isoformat(),
+                ))
+            else:
+                row.items = json.dumps([i.to_dict() for i in plan.items])
+                row.created_at = plan.created_at.isoformat()
+            s.commit()
 
     def get_remediation(self, dossier_id: str) -> RemediationPlan | None:
-        row = self._conn.execute(
-            "SELECT * FROM remediation_plans WHERE dossier_id = ?", (dossier_id,)
-        ).fetchone()
-        if row is None:
-            return None
-        return RemediationPlan(
-            id=row["id"],
-            dossier_id=row["dossier_id"],
-            items=[RemediationItem(**i) for i in json.loads(row["items"])],
-            created_at=_dt(row["created_at"]),
-        )
+        with self.session() as s:
+            row = s.query(RemediationPlanRow).filter_by(
+                dossier_id=dossier_id).one_or_none()
+            if row is None:
+                return None
+            return RemediationPlan(
+                id=row.id,
+                dossier_id=row.dossier_id,
+                items=[RemediationItem(**i) for i in json.loads(row.items)],
+                created_at=_dt(row.created_at),
+            )
 
     # -- evidence binders -----------------------------------------------------
 
     def save_binder(self, binder: EvidenceBinder) -> None:
-        self._conn.execute(
-            "INSERT INTO evidence_binders (id, dossier_id, evidence, assembled_at)"
-            " VALUES (?,?,?,?) ON CONFLICT(dossier_id) DO UPDATE SET"
-            " evidence=excluded.evidence, assembled_at=excluded.assembled_at",
-            (
-                binder.id,
-                binder.dossier_id,
-                json.dumps([e.to_dict() for e in binder.evidence]),
-                binder.assembled_at.isoformat(),
-            ),
-        )
-        self._conn.commit()
+        with self.session() as s:
+            row = s.query(EvidenceBinderRow).filter_by(
+                dossier_id=binder.dossier_id).one_or_none()
+            if row is None:
+                s.add(EvidenceBinderRow(
+                    id=binder.id,
+                    dossier_id=binder.dossier_id,
+                    evidence=json.dumps([e.to_dict() for e in binder.evidence]),
+                    assembled_at=binder.assembled_at.isoformat(),
+                ))
+            else:
+                row.evidence = json.dumps([e.to_dict() for e in binder.evidence])
+                row.assembled_at = binder.assembled_at.isoformat()
+            s.commit()
 
     def get_binder(self, dossier_id: str) -> EvidenceBinder | None:
-        row = self._conn.execute(
-            "SELECT * FROM evidence_binders WHERE dossier_id = ?", (dossier_id,)
-        ).fetchone()
-        return self._to_binder(row) if row else None
+        with self.session() as s:
+            row = s.query(EvidenceBinderRow).filter_by(
+                dossier_id=dossier_id).one_or_none()
+            return self._to_binder(row) if row else None
 
     def get_binder_by_id(self, binder_id: str) -> EvidenceBinder | None:
-        row = self._conn.execute(
-            "SELECT * FROM evidence_binders WHERE id = ?", (binder_id,)
-        ).fetchone()
-        return self._to_binder(row) if row else None
+        with self.session() as s:
+            row = s.get(EvidenceBinderRow, binder_id)
+            return self._to_binder(row) if row else None
 
-    def _to_binder(self, row) -> EvidenceBinder:
+    def _to_binder(self, row: EvidenceBinderRow) -> EvidenceBinder:
         return EvidenceBinder(
-            id=row["id"],
-            dossier_id=row["dossier_id"],
-            evidence=[EvidenceRef(**e) for e in json.loads(row["evidence"])],
-            assembled_at=_dt(row["assembled_at"]),
+            id=row.id,
+            dossier_id=row.dossier_id,
+            evidence=[EvidenceRef(**e) for e in json.loads(row.evidence)],
+            assembled_at=_dt(row.assembled_at),
         )
 
     # -- readiness assessments ------------------------------------------------
 
     def save_assessment(self, assessment: ReadinessAssessment) -> None:
-        self._conn.execute(
-            "INSERT INTO readiness_assessments (id, target, dimension_scores, threshold, assessed_at)"
-            " VALUES (?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET"
-            " dimension_scores=excluded.dimension_scores, threshold=excluded.threshold,"
-            " assessed_at=excluded.assessed_at",
-            (
-                assessment.id,
-                assessment.target,
-                json.dumps([s.to_dict() for s in assessment.dimension_scores]),
-                assessment.threshold,
-                assessment.assessed_at.isoformat(),
-            ),
-        )
-        self._conn.commit()
+        with self.session() as s:
+            row = s.get(ReadinessAssessmentRow, assessment.id)
+            if row is None:
+                s.add(ReadinessAssessmentRow(
+                    id=assessment.id,
+                    target=assessment.target,
+                    dimension_scores=json.dumps(
+                        [sc.to_dict() for sc in assessment.dimension_scores]),
+                    threshold=assessment.threshold,
+                    assessed_at=assessment.assessed_at.isoformat(),
+                ))
+            else:
+                row.dimension_scores = json.dumps(
+                    [sc.to_dict() for sc in assessment.dimension_scores])
+                row.threshold = assessment.threshold
+                row.assessed_at = assessment.assessed_at.isoformat()
+            s.commit()
 
     def get_assessment(self, assessment_id: str) -> ReadinessAssessment | None:
-        row = self._conn.execute(
-            "SELECT * FROM readiness_assessments WHERE id = ?", (assessment_id,)
-        ).fetchone()
-        if row is None:
-            return None
-        return ReadinessAssessment(
-            id=row["id"],
-            target=row["target"],
-            dimension_scores=[ScoreInput(**s) for s in json.loads(row["dimension_scores"])],
-            threshold=row["threshold"],
-            assessed_at=_dt(row["assessed_at"]),
-        )
+        with self.session() as s:
+            row = s.get(ReadinessAssessmentRow, assessment_id)
+            if row is None:
+                return None
+            return self._to_assessment(row)
 
     def list_assessments(self, target: str | None = None) -> list:
-        if target:
-            rows = self._conn.execute(
-                "SELECT * FROM readiness_assessments WHERE target = ?", (target,)
-            ).fetchall()
-        else:
-            rows = self._conn.execute("SELECT * FROM readiness_assessments").fetchall()
-        return [self._to_assessment(r) for r in rows]
+        with self.session() as s:
+            q = s.query(ReadinessAssessmentRow)
+            if target:
+                q = q.filter_by(target=target)
+            rows = q.all()
+            return [self._to_assessment(r) for r in rows]
 
     # -- provenance trace refs ------------------------------------------------
 
     def save_provenance_trace_ref(self, ref: ProvenanceTraceRef) -> None:
-        self._conn.execute(
-            "INSERT INTO provenance_trace_refs (id, target, trace_id, activity,"
-            " trace_uri, occurred_at) VALUES (?,?,?,?,?,?)"
-            " ON CONFLICT(id) DO UPDATE SET activity=excluded.activity,"
-            " trace_uri=excluded.trace_uri, occurred_at=excluded.occurred_at",
-            (ref.id, ref.target, ref.trace_id, ref.activity, ref.trace_uri,
-             ref.occurred_at.isoformat()),
-        )
-        self._conn.commit()
+        with self.session() as s:
+            row = s.get(ProvenanceTraceRefRow, ref.id)
+            if row is None:
+                s.add(ProvenanceTraceRefRow(
+                    id=ref.id,
+                    target=ref.target,
+                    trace_id=ref.trace_id,
+                    activity=ref.activity,
+                    trace_uri=ref.trace_uri,
+                    occurred_at=ref.occurred_at.isoformat(),
+                ))
+            else:
+                row.activity = ref.activity
+                row.trace_uri = ref.trace_uri
+                row.occurred_at = ref.occurred_at.isoformat()
+            s.commit()
 
     def list_provenance_trace_refs(self, target: str) -> list:
-        rows = self._conn.execute(
-            "SELECT * FROM provenance_trace_refs WHERE target = ?"
-            " ORDER BY occurred_at DESC",
-            (target,),
-        ).fetchall()
-        return [self._to_provenance_trace_ref(r) for r in rows]
+        with self.session() as s:
+            rows = (s.query(ProvenanceTraceRefRow)
+                    .filter_by(target=target)
+                    .order_by(ProvenanceTraceRefRow.occurred_at.desc())
+                    .all())
+            return [self._to_provenance_trace_ref(r) for r in rows]
 
     # -- certification packages -----------------------------------------------
 
     def save_package(self, package: CertificationPackage) -> None:
-        self._conn.execute(
-            "INSERT INTO certification_packages (id, dossier_id, assessment_id, binder_id,"
-            " remediation_id, generated_at) VALUES (?,?,?,?,?,?)"
-            " ON CONFLICT(dossier_id) DO UPDATE SET"
-            " assessment_id=excluded.assessment_id, binder_id=excluded.binder_id,"
-            " remediation_id=excluded.remediation_id, generated_at=excluded.generated_at",
-            (
-                package.id,
-                package.dossier.id,
-                package.assessment.id,
-                package.binder.id,
-                package.remediation_id,
-                package.generated_at.isoformat(),
-            ),
-        )
-        self._conn.commit()
+        with self.session() as s:
+            row = s.query(CertificationPackageRow).filter_by(
+                dossier_id=package.dossier.id).one_or_none()
+            if row is None:
+                s.add(CertificationPackageRow(
+                    id=package.id,
+                    dossier_id=package.dossier.id,
+                    assessment_id=package.assessment.id,
+                    binder_id=package.binder.id,
+                    remediation_id=package.remediation_id,
+                    generated_at=package.generated_at.isoformat(),
+                ))
+            else:
+                row.assessment_id = package.assessment.id
+                row.binder_id = package.binder.id
+                row.remediation_id = package.remediation_id
+                row.generated_at = package.generated_at.isoformat()
+            s.commit()
 
     def get_package(self, package_id: str) -> CertificationPackage | None:
-        row = self._conn.execute(
-            "SELECT * FROM certification_packages WHERE id = ?", (package_id,)
-        ).fetchone()
-        if row is None:
-            return None
-        return self._to_package(row)
+        with self.session() as s:
+            row = s.get(CertificationPackageRow, package_id)
+            if row is None:
+                return None
+            return self._to_package(row)
 
     def get_package_by_dossier(self, dossier_id: str) -> CertificationPackage | None:
-        row = self._conn.execute(
-            "SELECT * FROM certification_packages WHERE dossier_id = ?", (dossier_id,)
-        ).fetchone()
-        if row is None:
-            return None
-        return self._to_package(row)
+        with self.session() as s:
+            row = s.query(CertificationPackageRow).filter_by(
+                dossier_id=dossier_id).one_or_none()
+            if row is None:
+                return None
+            return self._to_package(row)
 
     def list_packages(self, target: str | None = None) -> list:
-        if target:
-            rows = self._conn.execute(
-                "SELECT p.* FROM certification_packages p"
-                " JOIN certification_dossiers d ON p.dossier_id = d.id"
-                " WHERE d.target = ?",
-                (target,),
-            ).fetchall()
-        else:
-            rows = self._conn.execute("SELECT * FROM certification_packages").fetchall()
-        return [self._to_package(r) for r in rows]
+        with self.session() as s:
+            q = s.query(CertificationPackageRow)
+            if target:
+                q = q.join(DossierRow,
+                           CertificationPackageRow.dossier_id == DossierRow.id) \
+                     .filter(DossierRow.target == target)
+            rows = q.all()
+            return [p for p in (self._to_package(r) for r in rows) if p is not None]
 
     # -- internals ------------------------------------------------------------
 
-    def _to_dossier(self, row) -> CertificationDossier:
+    def _to_dossier(self, row: DossierRow) -> CertificationDossier:
         return CertificationDossier(
-            id=row["id"],
-            target=row["target"],
-            scores=[ScoreInput(**s) for s in json.loads(row["scores"])],
-            evidence=[EvidenceRef(**e) for e in json.loads(row["evidence"])],
-            valid_days=row["valid_days"],
-            status=DossierStatus(row["status"]),
-            reviewer=row["reviewer"],
-            published_at=_dt(row["published_at"]),
-            seal=row["seal"],
-            revoked_at=_dt(row["revoked_at"]),
-            revocation_reason=row["revocation_reason"],
+            id=row.id,
+            target=row.target,
+            scores=[ScoreInput(**sc) for sc in json.loads(row.scores)],
+            evidence=[EvidenceRef(**e) for e in json.loads(row.evidence)],
+            valid_days=row.valid_days,
+            status=DossierStatus(row.status),
+            reviewer=row.reviewer,
+            published_at=_dt(row.published_at),
+            seal=row.seal,
+            revoked_at=_dt(row.revoked_at),
+            revocation_reason=row.revocation_reason,
         )
 
-    def _to_assessment(self, row) -> ReadinessAssessment:
+    def _to_assessment(self, row: ReadinessAssessmentRow) -> ReadinessAssessment:
         return ReadinessAssessment(
-            id=row["id"],
-            target=row["target"],
-            dimension_scores=[ScoreInput(**s) for s in json.loads(row["dimension_scores"])],
-            threshold=row["threshold"],
-            assessed_at=_dt(row["assessed_at"]),
+            id=row.id,
+            target=row.target,
+            dimension_scores=[ScoreInput(**sc)
+                              for sc in json.loads(row.dimension_scores)],
+            threshold=row.threshold,
+            assessed_at=_dt(row.assessed_at),
         )
 
-    def _to_package(self, row) -> CertificationPackage:
-        dossier = self.get_dossier(row["dossier_id"])
-        assessment = self.get_assessment(row["assessment_id"])
-        binder = self.get_binder_by_id(row["binder_id"])
+    def _to_package(self, row: CertificationPackageRow) -> CertificationPackage | None:
+        dossier = self.get_dossier(row.dossier_id)
+        assessment = self.get_assessment(row.assessment_id)
+        binder = self.get_binder_by_id(row.binder_id)
         if dossier is None or assessment is None or binder is None:
             return None
         return CertificationPackage(
-            id=row["id"],
+            id=row.id,
             dossier=dossier,
             assessment=assessment,
             binder=binder,
-            remediation_id=row["remediation_id"],
-            generated_at=_dt(row["generated_at"]),
+            remediation_id=row.remediation_id,
+            generated_at=_dt(row.generated_at),
         )
 
-    def _to_provenance_trace_ref(self, row) -> ProvenanceTraceRef:
+    def _to_provenance_trace_ref(self, row: ProvenanceTraceRefRow) -> ProvenanceTraceRef:
         return ProvenanceTraceRef(
-            id=row["id"],
-            target=row["target"],
-            trace_id=row["trace_id"],
-            activity=row["activity"],
-            trace_uri=row["trace_uri"],
-            occurred_at=_dt(row["occurred_at"]),
+            id=row.id,
+            target=row.target,
+            trace_id=row.trace_id,
+            activity=row.activity,
+            trace_uri=row.trace_uri,
+            occurred_at=_dt(row.occurred_at),
         )
 
 
-def connect_sqlite(path: str = ":memory:") -> sqlite3.Connection:
-    conn = sqlite3.connect(path, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    return conn
+def connect_sqlite(path: str = ":memory:") -> str:
+    """Return a SQLAlchemy DSN for a SQLite database (in-memory by default).
+
+    Kept as the dev/test factory so tests and local runs get a lightweight
+    backend without a PostgreSQL server.
+    """
+    if path == ":memory:":
+        return "sqlite:///:memory:"
+    return f"sqlite:///{path}"
 
 
 def _dt(value):
