@@ -1,11 +1,17 @@
-// Portal-aware API base: /m/<key>/api/v1 when mounted under the Suite portal.
+// Portal-aware base paths. Priority: the composed document (portal
+// /module/<key> page) injects window.__ARCA_MODULE_BASE__; standalone
+// dev behind the Suite proxy uses the /m/<module-key>/ location prefix.
+// The browser never carries a token — the portal attaches the SSO Bearer
+// server-side on every proxied call.
+const _injected = window.__ARCA_MODULE_BASE__;
 const _pm = window.location.pathname.match(/^\/m\/([^/]+)\//);
-const API = _pm ? `/m/${_pm[1]}/api/v1` : '/api/v1';
+const BASE = _injected || (_pm ? '/m/' + _pm[1] + '/' : '/');
+const API = BASE + 'api/v1';
 
 function $(sel) { return document.querySelector(sel); }
 
 function statusClass(level) {
-  return 'status ' + level.toLowerCase().replace(/_/g, '-');
+  return 'tag status-' + level.toLowerCase().replace(/_/g, '-');
 }
 
 // Security by design: the Suite portal attaches the SSO access token
@@ -44,7 +50,7 @@ async function loadPackages() {
   (data.packages || []).forEach(pkg => {
     const d = pkg.dossier;
     const card = document.createElement('div');
-    card.className = 'card';
+    card.className = 'panel';
     card.innerHTML = `
       <h3>${d.target}</h3>
       <span class="${statusClass(d.status)}">${d.status}</span>
@@ -62,7 +68,7 @@ window.showPackage = async function(id) {
   const detail = $('#package-detail');
   detail.classList.remove('hidden');
   detail.innerHTML = `
-    <div class="card">
+    <div class="panel">
       <h3>Report: ${pkg.dossier.target}</h3>
       <p>Status: <span class="${statusClass(pkg.dossier.status)}">${pkg.dossier.status}</span></p>
       <p>Seal: <code>${pkg.dossier.seal || 'n/a'}</code></p>
@@ -96,7 +102,7 @@ async function loadReadiness() {
   container.innerHTML = '';
   (Array.isArray(data) ? data : []).forEach(a => {
     const card = document.createElement('div');
-    card.className = 'card';
+    card.className = 'panel';
     card.innerHTML = `
       <h3>${a.target}</h3>
       <span class="${statusClass(a.level)}">${a.level}</span>
@@ -108,7 +114,7 @@ async function loadReadiness() {
 }
 
 async function loadSOC() {
-  const health = await getJSON(`${_pm ? `/m/${_pm[1]}` : ''}/healthz`);
+  const health = await getJSON(BASE + 'healthz');
   $('#soc-health').textContent = JSON.stringify(health, null, 2);
   $('#soc-risk').textContent = 'Risk scoring is computed from audit events collected by the embedded SOC.';
   $('#soc-events').textContent = 'Events are available via the SOC collector API.';
