@@ -57,5 +57,25 @@ class Settings(BaseSettings):
         ),
     )
 
+    # Shared validators service (evidence content gate) — Suite contract
+    # validation of validatable evidence artifacts (Turtle ontologies, JSON/YAML
+    # manifests, workflow YAML) before a package may be built. Fail-closed when
+    # configured; empty = disabled (Null adapter, evidence entries are marked
+    # validation: "skipped" explicitly).
+    validators_url: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "VALIDATORS_URL",
+            "CERT_VALIDATORS_URL",
+        ),
+    )
+    validators_timeout_seconds: float = Field(
+        default=10.0,
+        validation_alias=AliasChoices(
+            "VALIDATORS_TIMEOUT_SECONDS",
+            "CERT_VALIDATORS_TIMEOUT_SECONDS",
+        ),
+    )
+
 
 settings = Settings()

@@ -41,17 +41,35 @@ class EvidenceRef:
     ref_id: str
     description: str = ""
     collected_at: datetime = field(default_factory=_now)
+    # Optional inline content + mime type: when both indicate a validatable
+    # Suite artifact (Turtle ontology, JSON/YAML manifest, workflow YAML), the
+    # evidence content gate proves it against the shared validators service
+    # before the package may be built. Empty = reference-only evidence, not
+    # content-validatable. ``validation`` records the gate outcome explicitly
+    # ("passed" | "skipped"), never silently.
+    content: str = ""
+    mime: str = ""
+    validation: str = ""
 
     def to_dict(self) -> dict:
         collected_at = self.collected_at
         if isinstance(collected_at, datetime):
             collected_at = collected_at.isoformat()
-        return {
+        data = {
             "source": self.source,
             "ref_id": self.ref_id,
             "description": self.description,
             "collected_at": collected_at,
         }
+        # New keys are added only when set so existing serialized evidence
+        # shape is unchanged for reference-only entries.
+        if self.content:
+            data["content"] = self.content
+        if self.mime:
+            data["mime"] = self.mime
+        if self.validation:
+            data["validation"] = self.validation
+        return data
 
 
 @dataclass(frozen=True)

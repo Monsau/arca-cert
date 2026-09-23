@@ -6,6 +6,7 @@ evidence binder and remediation plan.
 from ..domain.cert_models import CertificationDossier, CertificationPackage, EvidenceRef, ScoreInput
 from ..events.cert_events import OutboxPublisher, package_created
 from .evidence_binder_assembler import EvidenceBinderAssembler
+from .evidence_content_gate import EvidenceContentGate
 from .readiness_assessor import ReadinessAssessor
 from .remediation_planner import RemediationPlanner
 
@@ -20,20 +21,29 @@ def _normalize_evidence(evidence: list) -> list:
 
 class CertificationPackageBuilder:
     def __init__(self, repository, publisher: OutboxPublisher | None = None,
-                 collector=None):
+                 collector=None, content_gate: EvidenceContentGate | None = None):
         self._repo = repository
         self._publisher = publisher or OutboxPublisher()
         self._collector = collector
         self._assessor = ReadinessAssessor(repository, publisher, collector)
         self._binder_asm = EvidenceBinderAssembler(repository, publisher, collector)
         self._remediation = RemediationPlanner(repository, publisher, collector)
+        # Evidence content gate (shared validators service). Default is the
+        # Null adapter when CERT_VALIDATORS_URL is empty — behavior unchanged,
+        # validatable entries are marked validation: "skipped" explicitly.
+        self._content_gate = content_gate or EvidenceContentGate()
 
     def build_package(self, target: str, scores: list, evidence: list,
-                      threshold: float = 0.7, valid_days: int = 90) -> CertificationPackage:
+                      threshold: float = 0.7, valid_days: int = 90,
+                      authorization: str | None = None) -> CertificationPackage:
         if not target or not scores:
             raise ValueError("target and at least one score are required")
         score_objs = _normalize_scores(scores)
         evidence_objs = _normalize_evidence(evidence or [])
+        # Fail-closed content gate: violations, denials and degraded outcomes
+        # (including timeouts) raise EvidenceValidationError and block the
+        # build before anything is persisted.
+        evidence_objs = self._content_gate.gate(evidence_objs, authorization=authorization)
         dossier = CertificationDossier(
             target=target, scores=score_objs, evidence=evidence_objs, valid_days=valid_days
         )
