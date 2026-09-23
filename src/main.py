@@ -11,7 +11,7 @@ from .api import graphql, mcp, rest
 from .api.security import get_current_user
 from .config import settings
 from .core.services.cert_service import CertService
-from .infra import otel
+from .infra import metrics, otel
 from .infra.kafka import BenchResultConsumer, KafkaEvent, KafkaProducer
 from .infra.ooc_client import build_ooc_gate_client
 from .infra.provenance_consumer import ProvenanceTraceConsumer
@@ -107,6 +107,8 @@ app = FastAPI(
     openapi_url=None,
 )
 otel.instrument(app)
+# Prometheus HTTP middleware: request count + latency per route template.
+app.add_middleware(metrics.PrometheusMiddleware)
 
 app.include_router(rest.router)
 app.include_router(mcp.router)
@@ -140,6 +142,15 @@ if os.path.isdir(ui_dir):
 @app.get("/healthz")
 def healthz():
     return {"status": "ok", "service": settings.app_name}
+
+
+@app.get("/metrics", include_in_schema=False)
+def prometheus_metrics():
+    # /metrics is UNAUTHENTICATED by design: it is exposed cluster-internally
+    # only, and NetworkPolicy restricts scraping to the external observability
+    # stack. This route is deliberately NOT covered by the
+    # _docs_metadata_guard above — only /docs, /redoc and /openapi.json are.
+    return metrics.metrics_response()
 
 
 @app.get("/readyz")
