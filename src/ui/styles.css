@@ -30,3 +30,21 @@
 .tag.status-revoked,
 .tag.status-not-ready { background: rgba(239,68,68,0.12); color: var(--error); border-color: transparent; }
 .tag.status-conditional { background: rgba(234,179,8,0.12); color: var(--warning); border-color: transparent; }
+
+/* ---- Dossier explorer ------------------------------------------------------ */
+/* Clickable table rows open the dossier drill-down. */
+.row-click { cursor: pointer; }
+
+/* Header row of a view: title on the left, filter/refresh actions on the right. */
+.actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--spacing-md);
+  flex-wrap: wrap;
+}
+.actions h2, .actions h3 { margin: 0; }
+
+/* Nested panels inside the create form group the score/evidence row sets. */
+fieldset.panel { border: 1px solid var(--border-subtle); }
+fieldset legend { color: var(--text-secondary); font-size: 0.85rem; }

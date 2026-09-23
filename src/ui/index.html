@@ -10,6 +10,14 @@
     so the browser sends no Authorization header at all.
     Design: shared Arca Suite skin (arcasuite-ui.css, same tokens as the
     portal) — one product look, dark theme by default.
+
+    Views (single document, JS view switch):
+      - Dossiers: explorer table + per-dossier drill-down (metadata,
+        scores, evidence with validation tags, remediation plan).
+      - New Dossier: create form wired to POST /api/v1/dossiers.
+    The former Packages/Readiness/SOC panels were removed: readiness has
+    no list endpoint and the SOC collector is not exposed over HTTP, so
+    those panels could only ever render placeholders.
   -->
   <link rel="stylesheet" href="arcasuite-ui.css">
   <link rel="stylesheet" href="styles.css">
@@ -18,49 +26,60 @@
   <header class="mod-header">
     <h1>Arca Cert</h1>
     <nav>
-      <button data-view="packages">Packages</button>
-      <button data-view="build">Build Package</button>
-      <button data-view="readiness">Readiness</button>
-      <button data-view="soc">SOC</button>
+      <button data-view="dossiers" class="active">Dossiers</button>
+      <button data-view="create">New Dossier</button>
     </nav>
   </header>
   <main class="mod-main" id="app">
-    <section id="packages-view" class="view active">
-      <h2>Certification Packages</h2>
-      <div id="package-list" class="mod-grid"></div>
-      <div id="package-detail" class="detail hidden"></div>
-    </section>
-    <section id="build-view" class="view">
-      <h2>Build Certification Package</h2>
-      <form id="build-form" class="panel">
-        <label>Target
-          <input type="text" id="target" placeholder="arca-flow" required>
-        </label>
-        <label>Scores (JSON array)
-          <textarea id="scores" rows="4" required>[{"dimension":"security","value":0.85},{"dimension":"compliance","value":0.6}]</textarea>
-        </label>
-        <label>Evidence (JSON array)
-          <textarea id="evidence" rows="3">[{"source":"trust","refId":"ev-1","description":"trust score evidence"}]</textarea>
-        </label>
-        <label>Threshold
-          <input type="number" id="threshold" step="0.01" value="0.7">
-        </label>
-        <button type="submit">Build Package</button>
-      </form>
-      <pre id="build-result"></pre>
-    </section>
-    <section id="readiness-view" class="view">
-      <h2>Readiness Dashboard</h2>
-      <div id="readiness-list" class="mod-grid"></div>
-    </section>
-    <section id="soc-view" class="view">
-      <h2>Embedded SOC</h2>
-      <div class="mod-grid">
-        <div class="panel"><h3>Health</h3><pre id="soc-health"></pre></div>
-        <div class="panel"><h3>Risk Summary</h3><pre id="soc-risk"></pre></div>
-        <div class="panel"><h3>Recent Events</h3><pre id="soc-events"></pre></div>
+
+    <section id="dossiers-view" class="view active">
+      <div class="actions">
+        <h2>Certification Dossiers</h2>
+        <div class="row">
+          <label>Filter by target
+            <input type="text" id="dossier-filter" placeholder="e.g. arca-flow">
+          </label>
+          <button type="button" id="refresh-dossiers" class="secondary">Refresh</button>
+        </div>
       </div>
+      <div id="dossiers-message"></div>
+      <div id="dossier-list"></div>
+      <div id="dossier-detail" class="detail hidden"></div>
     </section>
+
+    <section id="create-view" class="view">
+      <h2>New Certification Dossier</h2>
+      <p class="muted">
+        A dossier bundles the target's dimension scores, evidence references
+        and a validity window. Scores decide readiness; evidence with inline
+        content is content-validated by Arca Validate before a package can be
+        built from it.
+      </p>
+      <form id="create-form" class="panel">
+        <label>Target <span class="muted">(the artifact or candidate being certified)</span>
+          <input type="text" id="cd-target" placeholder="arca-flow" required>
+        </label>
+
+        <fieldset class="panel">
+          <legend>Scores <span class="muted">(at least one; value between 0 and 1)</span></legend>
+          <div id="score-rows"></div>
+          <button type="button" id="add-score" class="secondary">Add dimension</button>
+        </fieldset>
+
+        <fieldset class="panel">
+          <legend>Evidence <span class="muted">(optional; reference-only unless content is given)</span></legend>
+          <div id="evidence-rows"></div>
+          <button type="button" id="add-evidence" class="secondary">Add evidence</button>
+        </fieldset>
+
+        <label>Threshold
+          <input type="number" id="cd-threshold" step="0.01" min="0" max="1" value="0.7">
+        </label>
+        <button type="submit">Create Dossier</button>
+      </form>
+      <div id="create-message"></div>
+    </section>
+
   </main>
   <script src="app.js"></script>
 </body>
