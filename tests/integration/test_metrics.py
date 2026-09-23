@@ -41,12 +41,12 @@ def test_middleware_counts_request_by_route_template():
     assert probe.status_code in (200, 401, 403)
     response = client.get("/metrics")
     assert (
-        'http_requests_total{method="GET",route="/api/v1/dossiers/{dossier_id}",status="'
+        'arca_http_requests_total{method="GET",route="/api/v1/dossiers/{dossier_id}",status="'
         in response.text
     )
     assert (
         "dossier-probe-123"
-        not in response.text.split("http_requests_total")[1].split("# HELP")[0]
+        not in response.text.split("arca_http_requests_total")[1].split("# HELP")[0]
     )
 
 
@@ -54,6 +54,6 @@ def test_middleware_records_latency_histogram():
     client.get("/healthz")
     response = client.get("/metrics")
     assert (
-        'http_request_duration_seconds_count{method="GET",route="/healthz"}'
+        'arca_http_request_duration_seconds_count{method="GET",route="/healthz"}'
         in response.text
     )
