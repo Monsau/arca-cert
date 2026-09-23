@@ -4,8 +4,18 @@
 Arca Cert assembles certification dossiers and remediation plans from trust scores, bench results and evidence bundles. It produces the versioned reports required by auditors and regulators.
 
 ## Status
-Scaffolding (pass 1). Skeleton code compiles and exposes a health endpoint;
-business logic is intentionally not implemented yet.
+Implemented and test-covered (103 tests: unit, integration, contract). The
+module builds certification dossiers, sealed certification packages, evidence
+binders, readiness assessments and remediation plans; it consumes bench
+results and optional ArcaQ PROV-O traces, and enforces RBAC/ABAC plus the OOC
+gate on every mutation.
+
+## UI route
+The embedded UI is served at `/cert` (static mount). This is deliberate: the
+Suite portal (`arca-platform-k8s`, portal config `ui_base: /cert`) links to
+`/cert`, and the `cert-root-redirect` ingress middleware rewrites `/` to
+`/cert`. Do not rename the mount to `/ui/` without updating the portal and
+ingress in `arca-platform-k8s`.
 
 ## Autonomy
 This repository is an autonomous product. It does not depend on the code or the

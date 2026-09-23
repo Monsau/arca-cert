@@ -15,7 +15,7 @@ from .infra import metrics, otel
 from .infra.kafka import BenchResultConsumer, KafkaEvent, KafkaProducer
 from .infra.ooc_client import build_ooc_gate_client
 from .infra.provenance_consumer import ProvenanceTraceConsumer
-from .infra.soc import SOCCollector
+from .infra.soc import EmbeddedSOC
 from .infra.store import SqlCertRepository, connect_sqlite
 
 
@@ -49,11 +49,15 @@ class KafkaDomainEventPublisher:
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
     repository = build_repository()
-    collector = SOCCollector()
+    # Full embedded SOC (ADR-009): five bricks composed in EmbeddedSOC, same
+    # wiring pattern as arca-bench. Mutations are audited through
+    # audit_operation inside CertService.
+    soc = EmbeddedSOC()
     kafka_producer = KafkaProducer()
     kafka_publisher = KafkaDomainEventPublisher(kafka_producer)
     app.state.cert_repository = repository
-    app.state.soc_collector = collector
+    app.state.soc = soc
+    app.state.soc_collector = soc.collector
     app.state.kafka_publisher = kafka_publisher
     app.state.oidc_validator = OIDCValidator(
         issuer=settings.oidc_issuer or None,
@@ -63,8 +67,9 @@ async def lifespan(app: FastAPI):
     app.state.cert_service = CertService(
         repository,
         publisher=kafka_publisher,
-        collector=collector,
+        collector=soc.collector,
         ooc_client=build_ooc_gate_client(),
+        soc=soc,
     )
     consumer = None
     # Kafka consumption is enabled by default so cert packages react to
@@ -112,7 +117,7 @@ def _docs_metadata_guard(request: Request) -> None:
 
 app = FastAPI(
     title=settings.app_name,
-    version="0.1.0",
+    version="2.3.0",
     lifespan=lifespan,
     docs_url=None,
     redoc_url=None,

@@ -1,9 +1,16 @@
-"""Embedded SOC: the five mandatory bricks. No telemetry or audit bypass allowed."""
+"""Embedded SOC: the five mandatory bricks. No telemetry or audit bypass allowed.
+
+Same wiring contract as arca-bench (ADR-009): the five bricks are composed in
+``EmbeddedSOC`` and every mutation is routed through ``audit_operation`` so
+operation_started / operation_succeeded / operation_failed events, traces and
+error logs are collected without any bypass.
+"""
 import json
 import logging
 import threading
 import uuid
 from collections import defaultdict
+from contextlib import contextmanager
 from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
@@ -221,3 +228,36 @@ class SOCResponder:
     def actions(self) -> list:
         with self._lock:
             return list(self._actions)
+
+
+class EmbeddedSOC:
+    """Composition root of the five SOC bricks (same pattern as arca-bench)."""
+
+    def __init__(self):
+        self.collector = SOCCollector()
+        self.analyzer = SOCAnalyzer(self.collector)
+        self.dashboard = SOCDashboard(self.collector, self.analyzer)
+        self.forensics = SOCForensics(self.collector)
+        self.responder = SOCResponder(self.collector)
+
+
+@contextmanager
+def audit_operation(soc: EmbeddedSOC, operation: str, correlation_id: str,
+                    entity_type: str = None, entity_id: str = None,
+                    user: dict = None):
+    """Audit context manager: collect start/success/failure events and traces
+    for a mutation. Failures are logged and re-raised — no silent bypass."""
+    payload = {"operation": operation, "entity_type": entity_type,
+               "entity_id": entity_id, "user": user}
+    soc.collector.collect_event("operation_started", payload, correlation_id)
+    soc.collector.collect_trace(operation, {"correlation_id": correlation_id})
+    try:
+        yield soc
+        soc.collector.collect_event("operation_succeeded", payload,
+                                    correlation_id)
+    except Exception as exc:
+        soc.collector.collect_event("operation_failed", {
+            **payload, "error": str(exc)}, correlation_id)
+        soc.collector.collect_log("error", str(exc), {
+            "operation": operation, "correlation_id": correlation_id})
+        raise

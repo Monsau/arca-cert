@@ -20,6 +20,9 @@ type EvidenceRef {
   refId: String!
   description: String
   collectedAt: String
+  content: String
+  mime: String
+  validation: String
 }
 
 type RemediationItem {
@@ -92,4 +95,8 @@ input EvidenceInput {
   source: String!
   refId: String!
   description: String
+  collectedAt: String
+  content: String
+  mime: String
+  validation: String
 }

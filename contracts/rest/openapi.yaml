@@ -1,71 +1,602 @@
 openapi: 3.1.0
 info:
-  title: Arca Cert - Certification Dossier Builder REST API
-  version: 0.1.0
-  description: Synchronous contract of arca-cert (see ADR-002).
-servers:
-  - url: /api/v1
+  title: Arca Cert - Certification Dossier Builder
+  version: 2.3.0
+  description: Synchronous contract of arca-cert, generated from the running FastAPI
+    app (see ADR-002).
 paths:
-  /dossiers:
+  /api/v1/cert/health:
+    get:
+      tags:
+      - arca-cert
+      summary: Api Health
+      operationId: api_health_api_v1_cert_health_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+  /api/v1/dossiers:
     post:
-      summary: Build a certification dossier
-      operationId: cert_post_773445
+      tags:
+      - arca-cert
+      summary: Build Dossier
+      operationId: build_dossier_api_v1_dossiers_post
+      security:
+      - HTTPBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              title: Body
       responses:
-        '200':
-          description: OK
+        '201':
+          description: Successful Response
           content:
             application/json:
-              schema: {'$ref': '#/components/schemas/CertificationDossier'}
-  /dossiers:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
     get:
-      summary: List dossiers
-      operationId: cert_get_773445
+      tags:
+      - arca-cert
+      summary: List Dossiers
+      operationId: list_dossiers_api_v1_dossiers_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: target
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Target
       responses:
         '200':
-          description: OK
+          description: Successful Response
           content:
             application/json:
-              schema: {'$ref': '#/components/schemas/CertificationDossier'}
-  /dossiers/{id}:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/dossiers/{dossier_id}:
     get:
-      summary: Read a dossier
-      operationId: cert_get_967057
+      tags:
+      - arca-cert
+      summary: Get Dossier
+      operationId: get_dossier_api_v1_dossiers__dossier_id__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: dossier_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Dossier Id
       responses:
         '200':
-          description: OK
+          description: Successful Response
           content:
             application/json:
-              schema: {'$ref': '#/components/schemas/CertificationDossier'}
-  /dossiers/{id}/remediation:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/dossiers/{dossier_id}/remediation:
     get:
-      summary: Get remediation plan
-      operationId: cert_get_805017
+      tags:
+      - arca-cert
+      summary: Get Remediation
+      operationId: get_remediation_api_v1_dossiers__dossier_id__remediation_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: dossier_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Dossier Id
       responses:
         '200':
-          description: OK
+          description: Successful Response
           content:
             application/json:
-              schema: {'$ref': '#/components/schemas/CertificationDossier'}
-  /dossiers/{id}/publish:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/dossiers/{dossier_id}/publish:
     post:
-      summary: Publish the dossier
-      operationId: cert_post_216949
+      tags:
+      - arca-cert
+      summary: Publish Dossier
+      operationId: publish_dossier_api_v1_dossiers__dossier_id__publish_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: dossier_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Dossier Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              title: Body
       responses:
         '200':
-          description: OK
+          description: Successful Response
           content:
             application/json:
-              schema: {'$ref': '#/components/schemas/CertificationDossier'}
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/dossiers/{dossier_id}/revoke:
+    post:
+      tags:
+      - arca-cert
+      summary: Revoke Dossier
+      operationId: revoke_dossier_api_v1_dossiers__dossier_id__revoke_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: dossier_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Dossier Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              title: Body
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/packages:
+    post:
+      tags:
+      - arca-cert
+      summary: Build Package
+      operationId: build_package_api_v1_packages_post
+      security:
+      - HTTPBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              title: Body
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - arca-cert
+      summary: List Packages
+      operationId: list_packages_api_v1_packages_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: target
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Target
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/packages/{package_id}:
+    get:
+      tags:
+      - arca-cert
+      summary: Get Package
+      operationId: get_package_api_v1_packages__package_id__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: package_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Package Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/evidence-binders/{dossier_id}:
+    get:
+      tags:
+      - arca-cert
+      summary: Get Evidence Binder
+      operationId: get_evidence_binder_api_v1_evidence_binders__dossier_id__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: dossier_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Dossier Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/readiness:
+    post:
+      tags:
+      - arca-cert
+      summary: Assess Readiness
+      operationId: assess_readiness_api_v1_readiness_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              additionalProperties: true
+              type: object
+              title: Body
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /api/v1/readiness/{assessment_id}:
+    get:
+      tags:
+      - arca-cert
+      summary: Get Readiness
+      operationId: get_readiness_api_v1_readiness__assessment_id__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: assessment_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Assessment Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /mcp/capabilities:
+    get:
+      tags:
+      - mcp
+      summary: List Capabilities
+      operationId: list_capabilities_mcp_capabilities_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+  /mcp/tools/create_cert_package:
+    post:
+      tags:
+      - mcp
+      summary: Create Cert Package
+      operationId: create_cert_package_mcp_tools_create_cert_package_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              additionalProperties: true
+              type: object
+              title: Body
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /mcp/tools/assemble_evidence:
+    post:
+      tags:
+      - mcp
+      summary: Assemble Evidence
+      operationId: assemble_evidence_mcp_tools_assemble_evidence_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              additionalProperties: true
+              type: object
+              title: Body
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /mcp/tools/get_readiness_status:
+    post:
+      tags:
+      - mcp
+      summary: Get Readiness Status
+      operationId: get_readiness_status_mcp_tools_get_readiness_status_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              additionalProperties: true
+              type: object
+              title: Body
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /mcp/tools/get_remediation_plan:
+    post:
+      tags:
+      - mcp
+      summary: Get Remediation Plan
+      operationId: get_remediation_plan_mcp_tools_get_remediation_plan_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              additionalProperties: true
+              type: object
+              title: Body
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /mcp/tools/publish_cert_package:
+    post:
+      tags:
+      - mcp
+      summary: Publish Cert Package
+      operationId: publish_cert_package_mcp_tools_publish_cert_package_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              additionalProperties: true
+              type: object
+              title: Body
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /graphql:
+    get:
+      tags:
+      - graphql
+      summary: Graphql Playground
+      operationId: graphql_playground_graphql_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+    post:
+      tags:
+      - graphql
+      summary: Graphql Endpoint
+      operationId: graphql_endpoint_graphql_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - HTTPBearer: []
+  /healthz:
+    get:
+      summary: Healthz
+      operationId: healthz_healthz_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+  /readyz:
+    get:
+      summary: Readyz
+      operationId: readyz_readyz_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
 components:
   schemas:
-    CertificationDossier:
-      type: object
+    HTTPValidationError:
       properties:
-        id:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
           type: string
-          format: uuid
-        status:
+          title: Message
+        type:
           type: string
-        created_at:
-          type: string
-          format: date-time
+          title: Error Type
+        input:
+          title: Input
+        ctx:
+          type: object
+          title: Context
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+  securitySchemes:
+    HTTPBearer:
+      type: http
+      scheme: bearer

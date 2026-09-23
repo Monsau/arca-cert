@@ -6,9 +6,14 @@ Facade that orchestrates the specialised cert services:
 - ReadinessAssessor
 - RemediationPlanner
 
-Backwards-compatible helpers for dossier/remain keep existing tests green.
+Every mutation is routed through the embedded SOC via ``audit_operation``
+(same wiring as arca-bench): audit events, traces and escalation on security
+signals (seal failure, OOC denial, revocation). No telemetry bypass allowed.
 """
+import contextlib
+
 from ...config import settings
+from ...infra.soc import EmbeddedSOC, audit_operation
 from ..domain.cert_models import CertificationDossier, DossierStatus
 from ..events.cert_events import (
     OutboxPublisher,
@@ -28,10 +33,14 @@ from ...infra.vault import Signer, get_signer
 class CertService:
     def __init__(self, repository, publisher: OutboxPublisher | None = None,
                  collector=None, ooc_client: OOCGateClient | None = None,
-                 signer: Signer | None = None):
+                 signer: Signer | None = None, soc: EmbeddedSOC | None = None):
         self._repo = repository
         self._publisher = publisher or OutboxPublisher()
         self._collector = collector
+        # Full SOC wiring (ADR-009): when provided, mutations are audited
+        # through audit_operation and security signals trigger responder
+        # escalation, same pattern as arca-bench.
+        self._soc = soc
         self._ooc_client = ooc_client if ooc_client is not None else build_ooc_gate_client()
         self._signer = signer if signer is not None else get_signer()
         self._package_builder = CertificationPackageBuilder(
@@ -41,16 +50,26 @@ class CertService:
         self._assessor = ReadinessAssessor(repository, publisher, collector)
         self._remediation = RemediationPlanner(repository, publisher, collector)
 
+    def _audit(self, operation: str, correlation_id: str,
+               entity_type: str = None, entity_id: str = None):
+        """Audit context for mutations; no-op when no SOC is wired."""
+        if self._soc is not None:
+            return audit_operation(self._soc, operation, correlation_id,
+                                   entity_type, entity_id)
+        return contextlib.nullcontext()
+
     # -- backward-compatible dossier helpers ----------------------------------
 
     def build_dossier(self, target: str, scores: list, evidence: list,
                       threshold: float = 0.7) -> tuple:
-        package = self._package_builder.build_package(
-            target=target, scores=scores, evidence=evidence, threshold=threshold
-        )
-        self._publisher.publish(dossier_built(package.dossier))
-        plan = self._remediation.get_plan(package.dossier.id)
-        return package.dossier, plan
+        with self._audit("build_dossier", correlation_id=f"dossier:{target}",
+                         entity_type="target", entity_id=target):
+            package = self._package_builder.build_package(
+                target=target, scores=scores, evidence=evidence, threshold=threshold
+            )
+            self._publisher.publish(dossier_built(package.dossier))
+            plan = self._remediation.get_plan(package.dossier.id)
+            return package.dossier, plan
 
     def _sealer(self):
         key = settings.vault_transit_key
@@ -61,41 +80,65 @@ class CertService:
         return lambda payload, signature: self._signer.verify(key, payload, signature)
 
     def publish_dossier(self, dossier_id: str, reviewer: str, version: str | None = None) -> CertificationDossier:
-        dossier = self._repo.get_dossier(dossier_id)
-        if dossier is None:
-            raise LookupError(f"dossier {dossier_id} not found")
-        if not self._ooc_client.is_approved(dossier.target, version):
-            raise OOCNotApprovedError(
-                f"dossier {dossier_id}: no approved OOC for target {dossier.target}"
-            )
-        dossier.publish(reviewer, sealer=self._sealer())
-        self._repo.save_dossier(dossier)
-        self._publisher.publish(dossier_published(dossier))
-        package_id = dossier.id
-        self._publisher.publish(asset_published(dossier, package_id))
-        if self._collector:
-            self._collector.collect_event(
-                "dossier.published",
-                {"dossier_id": dossier_id, "reviewer": reviewer,
-                 "seal": dossier.seal},
-                correlation_id=dossier_id,
-            )
-        return dossier
+        with self._audit("publish_dossier", correlation_id=dossier_id,
+                         entity_type="dossier", entity_id=dossier_id):
+            dossier = self._repo.get_dossier(dossier_id)
+            if dossier is None:
+                raise LookupError(f"dossier {dossier_id} not found")
+            if not self._ooc_client.is_approved(dossier.target, version):
+                # OOC gate denial is a security-relevant event: escalate.
+                if self._soc:
+                    self._soc.responder.escalate(
+                        dossier_id, "medium")
+                raise OOCNotApprovedError(
+                    f"dossier {dossier_id}: no approved OOC for target {dossier.target}"
+                )
+            dossier.publish(reviewer, sealer=self._sealer())
+            self._repo.save_dossier(dossier)
+            self._publisher.publish(dossier_published(dossier))
+            package_id = dossier.id
+            self._publisher.publish(asset_published(dossier, package_id))
+            if self._collector:
+                self._collector.collect_event(
+                    "dossier.published",
+                    {"dossier_id": dossier_id, "reviewer": reviewer,
+                     "seal": dossier.seal},
+                    correlation_id=dossier_id,
+                )
+            # Fail-closed seal check: a broken seal on a published dossier is
+            # escalated immediately (same escalation pattern as arca-bench
+            # run-completion anomaly handling).
+            if self._soc:
+                if not dossier.verify_seal():
+                    self._soc.collector.collect_event(
+                        "seal.failure",
+                        {"dossier_id": dossier_id, "value": 1.0},
+                        correlation_id=dossier_id,
+                    )
+                anomalies = self._soc.analyzer.detect_anomaly("seal.failure", 0.0)
+                if anomalies:
+                    self._soc.responder.escalate(dossier_id, "high")
+            return dossier
 
     def revoke_dossier(self, dossier_id: str, reviewer: str, reason: str) -> CertificationDossier:
-        dossier = self._repo.get_dossier(dossier_id)
-        if dossier is None:
-            raise LookupError(f"dossier {dossier_id} not found")
-        dossier.revoke(reviewer, reason)
-        self._repo.save_dossier(dossier)
-        self._publisher.publish(dossier_revoked(dossier))
-        if self._collector:
-            self._collector.collect_event(
-                "dossier.revoked",
-                {"dossier_id": dossier_id, "reviewer": reviewer, "reason": reason},
-                correlation_id=dossier_id,
-            )
-        return dossier
+        with self._audit("revoke_dossier", correlation_id=dossier_id,
+                         entity_type="dossier", entity_id=dossier_id):
+            dossier = self._repo.get_dossier(dossier_id)
+            if dossier is None:
+                raise LookupError(f"dossier {dossier_id} not found")
+            dossier.revoke(reviewer, reason)
+            self._repo.save_dossier(dossier)
+            self._publisher.publish(dossier_revoked(dossier))
+            if self._collector:
+                self._collector.collect_event(
+                    "dossier.revoked",
+                    {"dossier_id": dossier_id, "reviewer": reviewer, "reason": reason},
+                    correlation_id=dossier_id,
+                )
+            # Revoking a published dossier is a high-severity event.
+            if self._soc:
+                self._soc.responder.escalate(dossier_id, "high")
+            return dossier
 
     def get_dossier(self, dossier_id: str):
         return self._repo.get_dossier(dossier_id)
@@ -110,10 +153,12 @@ class CertService:
 
     def build_package(self, target: str, scores: list, evidence: list,
                       threshold: float = 0.7, valid_days: int = 90) -> dict:
-        package = self._package_builder.build_package(
-            target, scores, evidence, threshold, valid_days
-        )
-        return package.to_dict()
+        with self._audit("build_package", correlation_id=f"package:{target}",
+                         entity_type="target", entity_id=target):
+            package = self._package_builder.build_package(
+                target, scores, evidence, threshold, valid_days
+            )
+            return package.to_dict()
 
     def get_package(self, package_id: str) -> dict | None:
         package = self._package_builder.get_package(package_id)
